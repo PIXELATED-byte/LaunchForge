@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>LaunchForge — Build Websites Faster</title>
+
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js" defer></script>
+</head>
+
+<body>
+    <div class="app">
+
+        <aside class="sidebar">
+            <h1 class="logo">LaunchForge<span>.</span></h1>
+
+            <nav>
+                <a href="#" class="active">Dashboard</a>
+                <a href="#">My Projects</a>
+                <a href="#">AI Website Builder</a>
+                <a href="#">Deployments</a>
+                <a href="#">Settings</a>
+            </nav>
+
+            <div class="sidebar-bottom">
+                <p>Free Plan</p>
+                <button id="upgrade-button">Upgrade Plan</button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+
+            <header class="topbar">
+                <div>
+                    <p class="eyebrow">YOUR WORKSPACE</p>
+                    <h2>Dashboard</h2>
+                </div>
+
+                <button id="new-project-button" class="primary-button">
+                    + New Project
+                </button>
+            </header>
+
+            <section class="welcome">
+                <p class="eyebrow">YOUR NEXT PROJECT STARTS HERE</p>
+
+                <h2>Turn ideas into websites.</h2>
+
+                <p>
+                    Describe your client's business.
+                    We'll help you build its online presence.
+                </p>
+
+                <button id="start-building-button" class="primary-button">
+                    Start building →
+                </button>
+            </section>
+
+            <section class="projects-section">
+                <div class="section-heading">
+                    <div>
+                        <h2>Your projects</h2>
+                        <p>Manage your websites in one place.</p>
+                    </div>
+
+                    <span id="project-count">0 projects</span>
+                </div>
+
+                <div id="projects-container" class="projects-grid">
+                    <div class="empty-state">
+                        <h3>Your workspace is ready.</h3>
+                        <p>Create your first project to get started.</p>
+                    </div>
+                </div>
+
+    <button id="back-to-dashboard" class="back-button">
+        ← Back to Dashboard
+    </button>
+
+    <div class="workspace-header">
+        <div>
+            <p class="workspace-label">PROJECT WORKSPACE</p>
+            <h1 id="workspace-title">Project Name</h1>
+            <p id="workspace-type">Business Type</p>
+        </div>
+
+        <span class="project-status">Draft</span>
+    </div>
+
+    <div class="workspace-section">
+        <h2>About this business</h2>
+        <p id="workspace-description"></p>
+    </div>
+
+    <div class="workspace-section">
+    <h2>Your website</h2>
+
+    <p id="website-status">
+        Your website hasn't been generated yet.
+    </p>
+
+    <button id="generate-website" class="primary-button">
+        ✨ Generate Website
+    </button>
+
+    <div id="website-preview-container" class="website-preview-container hidden">
+        <div class="preview-toolbar">
+            <span class="preview-dot"></span>
+            <span class="preview-dot"></span>
+            <span class="preview-dot"></span>
+            <span class="preview-label">LIVE PREVIEW</span>
+        </div>
+
+        <iframe
+    id="website-preview"
+    title="Generated website preview"
+    sandbox="allow-scripts allow-same-origin"
+    class="website-preview"
+></iframe>
+    </div>
+</div>
+
+</section>
+                <section id="project-workspace" class="project-workspace hidden">
+
+    <button id="back-to-dashboard" class="back-button">
+        ← Back to Dashboard
+    </button>
+
+    <div class="workspace-header">
+        <div>
+            <p class="workspace-label">PROJECT WORKSPACE</p>
+            <h1 id="workspace-title">Project Name</h1>
+            <p id="workspace-type">Business Type</p>
+        </div>
+
+        <span class="project-status">Draft</span>
+    </div>
+
+    <div class="workspace-section">
+        <h2>About this business</h2>
+        <p id="workspace-description"></p>
+    </div>
+
+    <div class="workspace-section">
+        <h2>Your website</h2>
+        <p>
+            Your generated website will appear here.
+            Start by turning your business details into a website.
+        </p>
+
+        <button id="generate-website" class="primary-button">
+            ✨ Generate Website
+        </button>
+    </div>
+
+</section>
+            </section>
+
+        </main>
+    </div>
+
+    <dialog id="project-dialog">
+        <form id="project-form">
+
+            <div class="dialog-heading">
+                <div>
+                    <p class="eyebrow">NEW PROJECT</p>
+                    <h2>Tell us about your client.</h2>
+                </div>
+
+                <button
+                    type="button"
+                    id="close-dialog-button"
+                    class="close-button"
+                    aria-label="Close dialog"
+                >×</button>
+            </div>
+
+            <label for="business-name">Business name</label>
+            <input
+                id="business-name"
+                name="businessName"
+                placeholder="e.g. Urban Threads"
+                required
+            >
+
+            <label for="business-type">Business type</label>
+            <select id="business-type" name="businessType" required>
+                <option value="">Select a business type</option>
+                <option value="Agency">Agency</option>
+                <option value="Clothing brand">Clothing brand</option>
+                <option value="Restaurant">Restaurant</option>
+                <option value="Portfolio">Personal portfolio</option>
+                <option value="Consulting">Consulting</option>
+                <option value="Other">Other</option>
+            </select>
+
+            <label for="business-description">What does the business do?</label>
+            <textarea
+                id="business-description"
+                name="description"
+                placeholder="Describe the business and its customers..."
+                rows="4"
+                required
+            ></textarea>
+
+            <button type="submit" class="primary-button full-width">
+                Create project
+            </button>
+
+        </form>
+    </dialog>
+
+</body>
+</html>
