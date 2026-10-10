@@ -59,6 +59,7 @@
             </section>
 
             <section class="projects-section">
+
                 <div class="section-heading">
                     <div>
                         <h2>Your projects</h2>
@@ -75,92 +76,68 @@
                     </div>
                 </div>
 
-    <button id="back-to-dashboard" class="back-button">
-        ← Back to Dashboard
-    </button>
+            </section>
 
-    <div class="workspace-header">
-        <div>
-            <p class="workspace-label">PROJECT WORKSPACE</p>
-            <h1 id="workspace-title">Project Name</h1>
-            <p id="workspace-type">Business Type</p>
-        </div>
+            <!-- THE ONLY PROJECT WORKSPACE -->
 
-        <span class="project-status">Draft</span>
-    </div>
+            <section id="project-workspace" class="project-workspace hidden">
 
-    <div class="workspace-section">
-        <h2>About this business</h2>
-        <p id="workspace-description"></p>
-    </div>
+                <button id="back-to-dashboard" class="back-button">
+                    ← Back to Dashboard
+                </button>
 
-    <div class="workspace-section">
-    <h2>Your website</h2>
+                <div class="workspace-header">
+                    <div>
+                        <p class="workspace-label">PROJECT WORKSPACE</p>
+                        <h1 id="workspace-title">Project Name</h1>
+                        <p id="workspace-type">Business Type</p>
+                    </div>
 
-    <p id="website-status">
-        Your website hasn't been generated yet.
-    </p>
+                    <span class="project-status">Draft</span>
+                </div>
 
-    <button id="generate-website" class="primary-button">
-        ✨ Generate Website
-    </button>
+                <div class="workspace-section">
+                    <h2>About this business</h2>
+                    <p id="workspace-description"></p>
+                </div>
 
-    <div id="website-preview-container" class="website-preview-container hidden">
-        <div class="preview-toolbar">
-            <span class="preview-dot"></span>
-            <span class="preview-dot"></span>
-            <span class="preview-dot"></span>
-            <span class="preview-label">LIVE PREVIEW</span>
-        </div>
+                <div class="workspace-section">
+                    <h2>Your website</h2>
 
-        <iframe
-    id="website-preview"
-    title="Generated website preview"
-    sandbox="allow-scripts allow-same-origin"
-    class="website-preview"
-></iframe>
-    </div>
-</div>
+                    <p id="website-status">
+                        Your website hasn't been generated yet.
+                    </p>
 
-</section>
-                <section id="project-workspace" class="project-workspace hidden">
+                    <button id="generate-website" class="primary-button">
+                        ✨ Generate Website
+                    </button>
 
-    <button id="back-to-dashboard" class="back-button">
-        ← Back to Dashboard
-    </button>
+                    <div
+                        id="website-preview-container"
+                        class="website-preview-container hidden"
+                    >
+                        <div class="preview-toolbar">
+                            <span class="preview-dot"></span>
+                            <span class="preview-dot"></span>
+                            <span class="preview-dot"></span>
+                            <span class="preview-label">LIVE PREVIEW</span>
+                        </div>
 
-    <div class="workspace-header">
-        <div>
-            <p class="workspace-label">PROJECT WORKSPACE</p>
-            <h1 id="workspace-title">Project Name</h1>
-            <p id="workspace-type">Business Type</p>
-        </div>
+                        <iframe
+                            id="website-preview"
+                            title="Generated website preview"
+                            sandbox="allow-scripts allow-same-origin"
+                            class="website-preview"
+                        ></iframe>
+                    </div>
+                </div>
 
-        <span class="project-status">Draft</span>
-    </div>
-
-    <div class="workspace-section">
-        <h2>About this business</h2>
-        <p id="workspace-description"></p>
-    </div>
-
-    <div class="workspace-section">
-        <h2>Your website</h2>
-        <p>
-            Your generated website will appear here.
-            Start by turning your business details into a website.
-        </p>
-
-        <button id="generate-website" class="primary-button">
-            ✨ Generate Website
-        </button>
-    </div>
-
-</section>
             </section>
 
         </main>
     </div>
+
+    <!-- NEW PROJECT DIALOG -->
 
     <dialog id="project-dialog">
         <form id="project-form">
@@ -180,6 +157,7 @@
             </div>
 
             <label for="business-name">Business name</label>
+
             <input
                 id="business-name"
                 name="businessName"
@@ -188,6 +166,7 @@
             >
 
             <label for="business-type">Business type</label>
+
             <select id="business-type" name="businessType" required>
                 <option value="">Select a business type</option>
                 <option value="Agency">Agency</option>
@@ -198,7 +177,10 @@
                 <option value="Other">Other</option>
             </select>
 
-            <label for="business-description">What does the business do?</label>
+            <label for="business-description">
+                What does the business do?
+            </label>
+
             <textarea
                 id="business-description"
                 name="description"
