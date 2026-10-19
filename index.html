@@ -72,15 +72,133 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 const $=s=>document.querySelector(s), app=$('#app'), KEY='launchforge.projects.v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let draft=null, aiConfigured=false, aiStatus='checking', aiBusy=false;
-const apiBase=()=>(localStorage.getItem('launchforge.apiBase')||window.LAUNCHFORGE_API_BASE||(location.protocol==='file:'?'http:'+'//localhost:3000':'https:'+'//launchforge-4a6u.onrender.com')).replace(/\/+$/,'');
+const apiBase=()=>(localStorage.getItem('launchforge.apiBase')||window.LAUNCHFORGE_API_BASE||(location.protocol==='file:'?'http:'+'//localhost:3000':(/^(localhost|127\.0\.0\.1)$/.test(location.hostname)?'':'https:'+'//launchforge-4a6u.onrender.com'))).replace(/\/+$/,'');
 const NAVJS='<script>document.addEventListener("click",function(ev){var a=ev.target.closest&&ev.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";ev.preventDefault();if(h.charAt(0)==="#"){var el=document.getElementById(h.slice(1));if(el)el.scrollIntoView({behavior:"smooth",block:"start"})}});<\/script>';
-addEventListener('beforeunload',e=>{if(draft&&!draft.saved){e.preventDefault();e.returnValue=''}});
+addEventListener('beforeunload',e=>{if((draft&&!draft.saved)||[saver,lastSaver].some(x=>x&&x.isPending())){e.preventDefault();e.returnValue=''}});
 /* ---------- storage (browser localStorage prototype) ---------- */
 function load(){try{const a=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(a)?a.filter(p=>p&&typeof p.id==='string'&&typeof p.name==='string'):[]}catch(e){return []}}
 function save(l){try{localStorage.setItem(KEY,JSON.stringify(l));return true}catch(e){toast('Could not save: browser storage is unavailable.');return false}}
 const get=id=>load().find(p=>p.id===id);
 function toast(m){const t=$('#toast');t.innerHTML='<div class="toast">'+esc(m)+'</div>';setTimeout(()=>t.innerHTML='',2600)}
 const fmt=t=>t?new Date(t).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'-';
+/* ---------- server storage (backend + Neon Postgres) ---------- */
+const OKEY='launchforge.owner.v1';
+let memTok=null,saver=null,lastSaver=null;
+const srv={state:'unknown',msg:'',at:0}; // state: unknown | ready | unconfigured | down
+const ISUUID=s=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+function newTok(){const b=new Uint8Array(32);crypto.getRandomValues(b);return btoa(String.fromCharCode.apply(null,b)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+// Stage 1 anonymous owner token: identifies this browser to the server. It is NOT a login.
+function ownerToken(){try{let t=localStorage.getItem(OKEY);if(!t||!/^[A-Za-z0-9_-]{32,128}$/.test(t)){t=newTok();localStorage.setItem(OKEY,t)}return t}catch(e){return memTok||(memTok=newTok())}}
+async function api(method,path,body,timeout){
+ const c=new AbortController(),t=setTimeout(()=>c.abort(),timeout||20000);
+ try{
+  const r=await fetch(apiBase()+path,{method,headers:Object.assign({'Authorization':'Bearer '+ownerToken()},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined,signal:c.signal});
+  let j=null;if(r.status!==204){try{j=await r.json()}catch(e){}}
+  if(!r.ok){const e=new Error((j&&j.error&&j.error.message)||'Server error ('+r.status+')');e.status=r.status;e.code=j&&j.error&&j.error.code;e.data=j;e.fatal=r.status>=400&&r.status<500&&r.status!==408&&r.status!==429;throw e}
+  return j;
+ }catch(e){if(e.status)throw e;const n=new Error(e.name==='AbortError'?'The server took too long to respond (it may be waking up).':'Could not reach the server.');n.network=true;throw n}
+ finally{clearTimeout(t)}}
+async function checkServer(force){
+ if(!force&&srv.state==='ready')return;
+ if(!force&&srv.state!=='unknown'&&Date.now()-srv.at<10000)return;
+ srv.at=Date.now();
+ try{const c=new AbortController(),t=setTimeout(()=>c.abort(),20000);const r=await fetch(apiBase()+'/api/health',{signal:c.signal});clearTimeout(t);const j=await r.json();const d=j&&j.database;
+  srv.state=d==='connected'?'ready':d==='unavailable'?'down':'unconfigured';srv.msg=d==='unavailable'?'the database is not reachable':''}
+ catch(e){srv.state='down';srv.msg='the backend is not reachable (it may be waking up)'}}
+/* LOCALSTORE-START */
+const RKEY='launchforge.recovery.v1', IKEY='launchforge.imported.v1';
+function jget(k,d){try{const v=JSON.parse(localStorage.getItem(k));return v&&typeof v==='object'&&!Array.isArray(v)?v:d}catch(e){return d}}
+function jset(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}
+const importedMap=()=>jget(IKEY,{});
+function recoveryRead(key){const e=jget(RKEY,{})[key];return e&&typeof e==='object'&&e.payload?e:null}
+function recoveryWrite(key,val){const r=jget(RKEY,{});r[key]=val;return jset(RKEY,r)}
+function recoveryClear(key){const r=jget(RKEY,{});if(key in r){delete r[key];jset(RKEY,r)}}
+function sameContent(a,b){return['name','type','desc','audience','style','html'].every(k=>(a[k]||'')===(b[k]||''))&&JSON.stringify(a.pages||[])===JSON.stringify(b.pages||[])}
+function importItem(p){return{localId:p.id,name:p.name,type:p.type,desc:p.desc,audience:p.audience,style:p.style,pages:p.pages,html:p.html||'',mode:p.mode||null,generatedAt:p.generatedAt||null,created:p.created||null,history:Array.isArray(p.history)?p.history.slice(-5):[]}}
+// Copies local projects to the server. Never changes or deletes local data. post(item) -> {status,id,message}.
+async function runImport(items,post){
+ const map=importedMap(),ok=[],bad=[];
+ for(const p of items){
+  if(map[p.id])continue;
+  try{const r=await post(importItem(p));
+   if(r&&(r.status==='imported'||r.status==='exists')){map[p.id]=r.id;jset(IKEY,map);ok.push(p.id)}
+   else bad.push({id:p.id,name:p.name,message:(r&&r.message)||'not imported'})}
+  catch(e){bad.push({id:p.id,name:p.name,message:e.message});if(e.network||e.status>=500||e.status===429)break}}
+ return{ok,bad}}
+/* LOCALSTORE-END */
+/* SAVER-START */
+function createSaver(o){
+ const T=o.timers||{set:(f,m)=>setTimeout(f,m),clear:t=>clearTimeout(t)};
+ const delay=o.delay==null?2000:o.delay,backoff=o.backoff||[3000,10000,30000];
+ let state='saved',dirty=false,running=false,timer=null,tries=0,latest=null,lastErr=null;
+ const set=(s,e)=>{state=s;lastErr=e||null;if(o.onState)o.onState(s,e||null)};
+ const sched=ms=>{T.clear(timer);timer=T.set(()=>{run()},ms)};
+ function touch(snap){latest=snap;dirty=true;tries=0;if(state==='conflict'||running)return;set('dirty');sched(delay)}
+ async function run(){
+  if(running||!dirty)return;T.clear(timer);running=true;dirty=false;const snap=latest;set('saving');
+  try{await o.save(snap);running=false;if(dirty){set('dirty');sched(0)}else set('saved')}
+  catch(e){running=false;dirty=true;
+   if(e&&e.conflict){set('conflict',e);return}
+   set('failed',e);
+   if(!(e&&e.fatal)&&tries<backoff.length)sched(backoff[tries++])}}
+ async function flush(){
+  if(state==='conflict'||state==='failed'){tries=0;if(state==='conflict')set('dirty')}
+  for(let i=0;i<400;i++){
+   if(running){await new Promise(r=>T.set(r,10));continue}
+   if(!dirty)break;
+   await run();if(state==='failed'||state==='conflict')break}
+  return state}
+ return{touch,flush,state:()=>state,error:()=>lastErr,isPending:()=>dirty||running||state==='failed'||state==='conflict'}}
+/* SAVER-END */
+function makeSnap(){if($('#n'))read();return{me:cur,name:cur.name,type:cur.type,desc:cur.desc,audience:cur.audience,style:cur.style,pages:cur.pages.slice(),html:draft?draft.html:(cur.html||''),mode:draft?draft.mode:(cur.mode||null),generatedAt:draft?draft.at:(cur.generatedAt||null),history:(cur.history||[]).slice(-5)}}
+function touchSave(){if(!saver)return;const s=makeSnap();const payload=Object.assign({},s);delete payload.me;recoveryWrite(s.me.id||'new',{payload,baseVersion:s.me.version||0,at:Date.now()});saver.touch(s)}
+async function pushServer(snap){
+ const me=snap.me;
+ const body={name:snap.name,type:snap.type,desc:snap.desc,audience:snap.audience,style:snap.style,pages:snap.pages,html:snap.html,mode:snap.mode,generatedAt:snap.generatedAt,history:snap.history};
+ if(!body.name){const e=new Error('Add a project name to save.');e.fatal=true;throw e}
+ try{
+  let r;
+  if(!me.id){r=await api('POST','/api/projects',body);me.id=r.project.id;if(cur===me&&location.hash.indexOf(me.id)<0)history.replaceState(null,'','#/project/'+me.id)}
+  else r=await api('PUT','/api/projects/'+me.id,Object.assign({baseVersion:me.version},body));
+  me.version=r.project.version;me.created=r.project.created;me.src='server';
+  if(cur===me&&draft&&draft.html===snap.html)draft.saved=true;
+  if(cur===me)stateBox();
+ }catch(e){if(e.status===409&&e.code==='VERSION_CONFLICT'){e.conflict=true;e.current=e.data&&e.data.current}throw e}}
+function initSaver(){
+ saver=null;if(cur.src!=='server')return;
+ const me=cur,wasNew=!me.id;
+ const s=createSaver({save:pushServer,onState:st=>{
+  if(st==='saved'){if(wasNew)recoveryClear('new');if(me.id)recoveryClear(me.id)}
+  if(saver===s)saveBadge()}});
+ saver=s}
+function saveBadge(){const el=$('#savest');if(!el)return;
+ if(!saver){el.className='badge warn';el.textContent=cur&&cur.src==='server'?'':'Local only';return}
+ const st=saver.state(),e=saver.error(),M={saved:['ok','Saved to server'],dirty:['warn','Unsaved changes…'],saving:['','Saving…'],failed:['warn',''],conflict:['warn','']};
+ el.className='badge '+M[st][0];el.textContent=M[st][1];el.title='';
+ const btn=(a,t)=>{const b=document.createElement('button');b.className='btn ghost sm';b.setAttribute(a,'1');b.textContent=t;return b};
+ if(st==='failed'){el.textContent='Save failed: '+((e&&e.message)||'error')+'. Your changes are kept in this browser. ';el.append(btn('data-retry-save','Retry now'))}
+ if(st==='conflict'){el.textContent='Save paused: version conflict. ';el.append(btn('data-resolve','Resolve'))}}
+function showConflict(){const e=saver&&saver.error(),cp=e&&e.current,me=cur;
+ modal('<h3>This project changed on the server</h3><p class="note">It was updated'+(cp?' (version '+cp.version+', '+esc(new Date(cp.updated).toLocaleString())+')':'')+' after you opened it. Nothing has been overwritten. Choose what to do:</p><div style="display:grid;gap:8px;margin-top:12px"><button class="btn sm" id="cf_keep">Keep my version (replace the server copy)</button><button class="btn ghost sm" id="cf_srv">Load the server version (discard my unsaved changes)</button><button class="btn ghost sm" id="cf_dl">Download my version as HTML</button><button class="btn ghost sm" data-x>Decide later</button></div>');
+ $('#cf_keep').onclick=()=>{closeM();if(cp)me.version=cp.version;saver.flush()};
+ $('#cf_srv').onclick=()=>{closeM();recoveryClear(me.id);if(cp)studioRender(me.id,Object.assign({},cp,{src:'server'}));else location.reload()};
+ $('#cf_dl').onclick=exportHtml}
+function recoveryPrompt(){const key=cur.id||'new',rc=recoveryRead(key);if(!rc)return;
+ if(cur.id&&sameContent(rc.payload,cur)&&rc.baseVersion===cur.version){recoveryClear(key);return}
+ if(!cur.id&&!rc.payload.name&&!rc.payload.html){recoveryClear(key);return}
+ const stale=cur.id&&rc.baseVersion!==cur.version;
+ modal('<h3>Unsaved local changes found</h3><p class="note">Edits from '+esc(new Date(rc.at).toLocaleString())+' were kept in this browser but never reached the server.'+(stale?' The server copy has changed since then, so saving them will ask you which version to keep.':'')+'</p><div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px"><button class="btn ghost sm" data-x>Decide later</button><button class="btn ghost sm" id="rc_d">Discard them</button><button class="btn sm" id="rc_r">Restore my local changes</button></div>');
+ $('#rc_r').onclick=()=>{closeM();applyRecovery(rc)};$('#rc_d').onclick=()=>{closeM();recoveryClear(key)}}
+function applyRecovery(rc){const p=rc.payload;
+ cur.name=p.name||'';cur.type=p.type||'other';cur.desc=p.desc||'';cur.audience=p.audience||'';cur.style=p.style||'Modern';cur.pages=p.pages||[];cur.history=Array.isArray(p.history)?p.history:[];
+ if(cur.id)cur.version=rc.baseVersion; // keep the old base so a changed server copy shows up as a conflict, never a silent overwrite
+ $('#n').value=cur.name;$('#t').value=cur.type;$('#st').value=cur.style;$('#d').value=cur.desc;$('#a').value=cur.audience;document.querySelectorAll('.pgc').forEach(x=>{x.checked=cur.pages.includes(x.value)});
+ draft=p.html?{html:p.html,at:p.generatedAt||Date.now(),mode:p.mode||'demo',saved:false}:null;
+ showPv();stateBox();touchSave();aiMsg('ok','Local changes restored.'+(saver?' Autosaving…':' Click Save project to keep them.'))}
+function bindForm(){const f=()=>{if(saver&&(cur.id||draft))touchSave()};document.querySelectorAll('#n,#t,#st,#d,#a,.pgc').forEach(el=>{el.addEventListener('input',f);el.addEventListener('change',f)})}
+function leaveServer(){saver.flush().then(st=>{if(st==='saved'){location.hash='#/dashboard'}else{
+ modal('<h3>Not saved to the server yet</h3><p class="note">Your changes are kept in a recovery copy in this browser and will be offered the next time you open this project.</p><div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px"><button class="btn ghost sm" data-x>Stay</button><button class="btn sm" id="lv2">Leave anyway</button></div>');
+ $('#lv2').onclick=()=>{closeM();location.hash='#/dashboard'}}})}
 /* ---------- site templates ---------- */
 const T={
 cafe:{f:'Georgia,serif',bg:'#fbf4ea',ac:'#9a4b24',tx:'#2c1d14',al:'#f0e1cc',h:'Slow mornings, honest coffee.',sv:['Single-origin espresso','Fresh pastries baked daily','Cozy seating and free Wi-Fi'],cta:'See the menu',al2:'center'},
@@ -124,7 +242,7 @@ er.className='e ok';er.textContent='Thanks! (Demo only: nothing was sent.)';f.re
 <\/script></body></html>`}
 /* ---------- router ---------- */
 const R={};
-function route(){const h=location.hash.replace(/^#\/?/,'')||'';const [a,b]=h.split('/');scrollTo(0,0);
+function route(){if(saver&&saver.isPending()){saver.flush();lastSaver=saver}saver=null;const h=location.hash.replace(/^#\/?/,'')||'';const [a,b]=h.split('/');scrollTo(0,0);
  if(a===''){draft=null;return landing()}if(a==='dashboard')return dash();if(a==='new')return studio(null);if(a==='project')return studio(b);
  if(['about','contact','privacy','terms'].includes(a))return page(a);landing()}
 addEventListener('hashchange',route);
@@ -136,7 +254,7 @@ function landing(){app.innerHTML=`<div class="wrap"><div class="hero"><h1>Your i
 <div class="card"><h3>Describe, don't design</h3><p>Answer six questions about your business and get a full site.</p></div>
 <div class="card"><h3>Look that fits</h3><p>Cafés, consultants, gyms, restaurants and portfolios each get a different layout and palette.</p></div>
 <div class="card"><h3>Safe live preview</h3><p>Sites render in a sandboxed frame, at desktop and mobile widths.</p></div>
-<div class="card"><h3>Projects that stick</h3><p>Save, rename, search and reopen projects in this browser.</p></div>
+<div class="card"><h3>Projects that stick</h3><p>Projects autosave to the server when it is available, with a clearly labeled local fallback in your browser.</p></div>
 <div class="card"><h3>Export</h3><p>Download the finished site as a single HTML file.</p></div>
 <div class="card"><h3>Deploy (needs setup)</h3><p>Hosting integration requires provider credentials. Setup steps are inside every project.</p></div></div></section>
 <section class="s"><h2>How it works</h2><p class="sub">Three steps.</p><div class="grid3"><div class="card"><h3>1. Describe</h3><p>Tell us about your business and audience.</p></div><div class="card"><h3>2. Generate</h3><p>Pick a style and the pages you want.</p></div><div class="card"><h3>3. Save and export</h3><p>Review the preview, then save or download it.</p></div></div></section>
@@ -146,38 +264,84 @@ function landing(){app.innerHTML=`<div class="wrap"><div class="hero"><h1>Your i
 <div class="card plan"><h3>Business</h3><div class="price">TBD</div><ul><li>Higher usage limits</li><li>Advanced project management</li><li>Additional integrations where available</li></ul><button class="btn ghost" disabled>Payments not configured</button></div></div></section>
 <section class="s" id="faq"><h2>FAQ</h2><div style="max-width:760px">
 <details><summary>Is this using real AI?</summary><p>Not in this build. It runs in demonstration mode with predefined templates filled in with your answers. AI generation needs a server-side model API key, which is not set up here.</p></details>
-<details><summary>Where are my projects stored?</summary><p>In this browser's local storage. It is a prototype store: clearing site data deletes them, and they do not sync across devices.</p></details>
+<details><summary>Where are my projects stored?</summary><p>When server storage is available, projects are saved to a database and tied to an anonymous token kept in this browser (there are no accounts yet). If the server is unavailable, the app falls back to this browser's local storage and labels those projects "Local only". Clearing site data removes the token and local copies.</p></details>
 <details><summary>Can I publish my site?</summary><p>You can download it. One-click deployment needs hosting credentials and is not connected.</p></details>
 <details><summary>Can I pay for a plan?</summary><p>No. Plans are proposals and no payment provider is configured.</p></details></div></section></div>`}
 /* ---------- static pages ---------- */
 function page(k){const c={about:['About LaunchForge','LaunchForge helps freelancers, small businesses and first-time founders get a professional website from a plain-English description. This build is a working prototype: template-based generation, local project storage, sandboxed preview and HTML export.'],
 contact:['Contact','Placeholder details (not real): hello@launchforge.example. No contact form backend exists in this prototype, so please do not rely on this address.'],
-privacy:['Privacy','Prototype notice: projects are stored only in your browser\'s local storage. Nothing is sent to a server by this app. A full privacy policy is required before any production launch.'],
+privacy:['Privacy','Prototype notice: projects are saved on the LaunchForge server (a Postgres database) under an anonymous token kept in your browser, or only in your browser if the server is unavailable. There are no accounts yet, so anyone who obtains your token could read your projects: do not store sensitive information. AI edits send your website HTML and instruction to Google Gemini. A full privacy policy is required before any production launch.'],
 terms:['Terms','Prototype notice: this software is provided as-is for evaluation. Formal terms of service must be written before any production launch.']}[k];
 app.innerHTML=`<div class="wrap" style="max-width:760px;padding-top:64px;padding-bottom:64px"><h1>${c[0]}</h1><p style="color:var(--mute)">${c[1]}</p><a class="btn" href="#/">Back to home</a></div>`}
 /* ---------- dashboard ---------- */
-let q='',flt='all';
-function dash(){draft=null;const all=load();app.innerHTML=`<div class="wrap" style="padding-top:36px;padding-bottom:60px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h1 style="margin:0;font-size:30px">Projects</h1><a class="btn" style="margin-left:auto" href="#/new">New project</a></div>
-<p class="note">Stored in this browser only (prototype storage, not a production database).</p>
-<div class="bar2"><input id="q" placeholder="Search projects" value="${esc(q)}" aria-label="Search projects"><select id="fl" aria-label="Filter by status"><option value="all">All statuses</option><option value="saved">Generated</option><option value="empty">Not generated</option></select></div><div id="list"></div></div>`;
-$('#fl').value=flt;$('#q').oninput=e=>{q=e.target.value;list()};$('#fl').onchange=e=>{flt=e.target.value;list()};list()}
-function list(){const all=load(),L=all.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())&&(flt==='all'||(flt==='saved')===!!p.html));const el=$('#list');if(!el)return;
- if(!all.length){el.innerHTML='<div class="empty"><h3 style="color:var(--text)">No projects yet</h3><p>Describe your business to create your first website.</p><a class="btn" href="#/new">Create a project</a></div>';return}
+let q='',flt='all',rows=[];
+async function dash(){draft=null;
+ app.innerHTML=`<div class="wrap" style="padding-top:36px;padding-bottom:60px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h1 style="margin:0;font-size:30px">Projects</h1><a class="btn" style="margin-left:auto" href="#/new">New project</a></div>
+<p class="note" id="dnote" role="status">Checking server storage…</p><div id="dban"></div>
+<div class="bar2"><input id="q" placeholder="Search projects" value="${esc(q)}" aria-label="Search projects"><select id="fl" aria-label="Filter by status"><option value="all">All statuses</option><option value="saved">Generated</option><option value="empty">Not generated</option></select></div><div id="list"><div class="empty">Loading projects…</div></div></div>`;
+ $('#fl').value=flt;$('#q').oninput=e=>{q=e.target.value;list()};$('#fl').onchange=e=>{flt=e.target.value;list()};
+ await loadRows()}
+async function loadRows(){
+ let corrupt=false;try{const raw=localStorage.getItem(KEY);if(raw)JSON.parse(raw)}catch(e){corrupt=true}
+ const map=importedMap();
+ const loc=load().filter(p=>!map[p.id]);
+ await checkServer();
+ let sr=[];
+ if(srv.state==='ready'){try{sr=(await api('GET','/api/projects')).projects.map(p=>Object.assign({},p,{src:'server'}))}catch(e){srv.state='down';srv.msg=e.message}}
+ if(!$('#dnote'))return;
+ rows=sr.concat(loc.map(p=>({id:p.id,name:p.name,type:p.type,created:p.created,hasHtml:!!p.html,src:'local'})));
+ const N={ready:'Server storage is connected. Server-saved projects are tied to an anonymous token kept in this browser (no accounts yet).',
+  unconfigured:'Server storage is not configured. Projects are saved in this browser only.',
+  down:'Server storage is unavailable ('+esc(srv.msg)+'). Local-only projects below still work; server-saved projects will return when it reconnects. <button class="btn ghost sm" data-retry>Retry</button>'}[srv.state];
+ $('#dnote').innerHTML=N;
+ let h='';
+ if(corrupt)h+='<div class="msg err">Some saved data in this browser could not be read. Nothing was changed. <button class="btn ghost sm" data-bak>Download raw backup</button></div>';
+ if(srv.state==='ready'&&loc.length)h+=`<div class="msg">${loc.length} project${loc.length>1?'s are':' is'} saved only in this browser. <button class="btn sm" data-imp>Import to server</button> <button class="btn ghost sm" data-bak>Download backup</button><div class="note" style="margin-top:6px">Importing copies them to the server. Your local copies are kept and nothing already on the server is overwritten.</div></div>`;
+ else if(loc.length)h+='<div class="msg">'+loc.length+' local-only project'+(loc.length>1?'s':'')+' in this browser. <button class="btn ghost sm" data-bak>Download backup</button></div>';
+ $('#dban').innerHTML=h;list()}
+function list(){const el=$('#list');if(!el)return;
+ const L=rows.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())&&(flt==='all'||(flt==='saved')===!!p.hasHtml));
+ if(!rows.length){el.innerHTML=srv.state==='down'?'<div class="empty"><h3 style="color:var(--text)">Server projects can\'t be loaded right now</h3><p>You can still create a project; it will be saved in this browser only until the server is back.</p><a class="btn" href="#/new">Create a project</a></div>':'<div class="empty"><h3 style="color:var(--text)">No projects yet</h3><p>Describe your business to create your first website.</p><a class="btn" href="#/new">Create a project</a></div>';return}
  if(!L.length){el.innerHTML='<div class="empty">No projects match your search or filter.</div>';return}
- el.innerHTML='<div class="pg">'+L.map(p=>`<div class="card"><h3>${esc(p.name)}</h3><p class="note">${esc(p.type||'')} · Created ${fmt(p.created)}</p><p style="margin:10px 0"><span class="badge ${p.html?'ok':'warn'}">${p.html?'Generated':'Not generated'}</span></p><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm" href="#/project/${p.id}">Open</a><button class="btn ghost sm" data-ren="${p.id}">Rename</button><button class="btn ghost sm" data-del="${p.id}">Delete</button></div></div>`).join('')+'</div>'}
+ el.innerHTML='<div class="pg">'+L.map(p=>`<div class="card"><h3>${esc(p.name)}</h3><p class="note">${esc(p.type||'')} · Created ${fmt(p.created)}</p><p style="margin:10px 0"><span class="badge ${p.src==='server'?'ok':'warn'}">${p.src==='server'?'Saved on server':'Local only · this browser'}</span> <span class="badge ${p.hasHtml?'ok':'warn'}">${p.hasHtml?'Generated':'Not generated'}</span></p><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm" href="#/project/${esc(p.id)}">Open</a><button class="btn ghost sm" data-ren="${esc(p.id)}">Rename</button><button class="btn ghost sm" data-del="${esc(p.id)}">Delete</button></div></div>`).join('')+'</div>'}
+function downloadBackup(){const raw=k=>{try{return localStorage.getItem(k)}catch(e){return null}};
+ const data={app:'LaunchForge',exportedAt:new Date().toISOString(),note:'Raw browser data. LaunchForge deleted nothing. The anonymous owner token is intentionally not included.',localProjects:raw(KEY),legacyLocalProjects:raw('launchforge-projects'),recoveryCopies:raw(RKEY),importedMap:raw(IKEY)};
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download='launchforge-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove()}
+async function doImport(){const items=load().filter(p=>!importedMap()[p.id]);if(!items.length)return;
+ const b=document.querySelector('[data-imp]');if(b){b.disabled=true;b.textContent='Importing…'}
+ const res=await runImport(items,item=>api('POST','/api/projects/import',{projects:[item]},40000).then(r=>r.results[0]));
+ modal('<h3>Import finished</h3><p>'+res.ok.length+' project'+(res.ok.length===1?'':'s')+' copied to the server.</p>'+(res.bad.length?'<p class="err">Not imported:</p><ul class="note">'+res.bad.map(x=>'<li>'+esc(x.name||x.id)+': '+esc(x.message)+'</li>').join('')+'</ul>':'')+'<p class="note">Your local copies were not changed or deleted.'+(res.bad.length?' You can retry the import, or download a backup first.':'')+'</p><div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px"><button class="btn ghost sm" data-bak>Download backup</button><button class="btn sm" data-x>Close</button></div>');
+ await loadRows()}
 document.addEventListener('click',e=>{const r=e.target.closest('[data-ren]'),d=e.target.closest('[data-del]');
- if(r){const p=get(r.dataset.ren);if(!p)return;modal(`<h3>Rename project</h3><input id="rn" value="${esc(p.name)}" style="width:100%;padding:10px;background:var(--panel2);border:1px solid var(--line);border-radius:10px"><p class="err" id="re"></p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn ghost sm" data-x>Cancel</button><button class="btn sm" id="rok">Save name</button></div>`);
-  $('#rok').onclick=()=>{const v=$('#rn').value.trim();if(!v){$('#re').textContent='Name cannot be empty.';return}const l=load();l.find(x=>x.id===p.id).name=v;save(l);closeM();list();toast('Renamed')}}
- if(d){const p=get(d.dataset.del);if(!p)return;modal(`<h3>Delete "${esc(p.name)}"?</h3><p class="note">This permanently removes the project and its saved website.</p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn ghost sm" data-x>Cancel</button><button class="btn danger sm" id="dok">Delete project</button></div>`);
-  $('#dok').onclick=()=>{save(load().filter(x=>x.id!==p.id));closeM();list();toast('Deleted')}}
+ if(r){const p=rows.find(x=>x.id===r.dataset.ren);if(!p)return;modal(`<h3>Rename project</h3><input id="rn" value="${esc(p.name)}" maxlength="60" style="width:100%;padding:10px;background:var(--panel2);border:1px solid var(--line);border-radius:10px"><p class="err" id="re"></p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn ghost sm" data-x>Cancel</button><button class="btn sm" id="rok">Save name</button></div>`);
+  $('#rok').onclick=async()=>{const v=$('#rn').value.trim();if(!v){$('#re').textContent='Name cannot be empty.';return}
+   try{if(p.src==='server')await api('PATCH','/api/projects/'+p.id,{name:v});else{const l=load(),x=l.find(y=>y.id===p.id);if(!x)throw new Error('Project not found.');x.name=v;if(!save(l))throw new Error('Could not write to browser storage.')}
+    closeM();await loadRows();toast('Renamed')}catch(err){$('#re').textContent=err.message}}}
+ if(d){const p=rows.find(x=>x.id===d.dataset.del);if(!p)return;modal(`<h3>Delete "${esc(p.name)}"?</h3><p class="note">${p.src==='server'?'This permanently deletes the project from the server.':'This removes the project from this browser only.'}</p><p class="err" id="de"></p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn ghost sm" data-x>Cancel</button><button class="btn danger sm" id="dok">Delete project</button></div>`);
+  $('#dok').onclick=async()=>{try{if(p.src==='server'){await api('DELETE','/api/projects/'+p.id);recoveryClear(p.id)}else{if(!save(load().filter(x=>x.id!==p.id)))throw new Error('Could not write to browser storage.')}
+    closeM();await loadRows();toast('Deleted')}catch(err){$('#de').textContent=err.message}}}
+ if(e.target.closest('[data-imp]'))doImport();
+ if(e.target.closest('[data-bak]'))downloadBackup();
+ if(e.target.closest('[data-retry]'))checkServer(true).then(loadRows);
+ if(e.target.closest('[data-retry-save]')&&saver)saver.flush();
+ if(e.target.closest('[data-resolve]')&&saver)showConflict();
  if(e.target.closest('[data-x]'))closeM()});
 function modal(h){const m=document.createElement('div');m.className='modal';m.id='modal';m.innerHTML='<div class="card" role="dialog" aria-modal="true">'+h+'</div>';document.body.appendChild(m)}
 function closeM(){const m=$('#modal');m&&m.remove()}
 /* ---------- studio (generator + preview + project) ---------- */
 let cur=null, mobile=false;
-function studio(id){let p=null,corrupt=false;
- if(id){p=get(id);if(!p){app.innerHTML='<div class="wrap" style="padding:64px 0"><div class="empty"><h3 style="color:var(--text)">Project not found</h3><p>It may have been deleted, or its saved data is unreadable.</p><a class="btn" href="#/dashboard">Back to projects</a></div></div>';return}}
- cur=p?{...p}:{id:null,name:'',type:'cafe',desc:'',audience:'',style:'Modern',pages:['Services','Gallery'],html:'',generatedAt:null,mode:null,created:null};
+async function studio(id){
+ if(id&&ISUUID(id)){
+  app.innerHTML='<div class="wrap" style="padding:64px 0"><div class="empty">Loading project…</div></div>';
+  try{const r=await api('GET','/api/projects/'+id);if(location.hash.indexOf(id)<0)return;srv.state='ready';return studioRender(id,Object.assign({},r.project,{src:'server'}))}
+  catch(e){if(location.hash.indexOf(id)<0)return;const nf=e.status===404;
+   app.innerHTML='<div class="wrap" style="padding:64px 0"><div class="empty"><h3 style="color:var(--text)">'+(nf?'Project not found':'Could not load this project')+'</h3><p>'+(nf?'It may have been deleted, or it belongs to a different browser.':esc(e.message)+' Your other projects, including local-only ones, are still available.')+'</p>'+(nf?'':'<button class="btn" id="rt">Try again</button> ')+'<a class="btn ghost" href="#/dashboard">Back to projects</a></div></div>';
+   const rt=$('#rt');if(rt)rt.onclick=()=>studio(id);return}}
+ if(!id&&srv.state==='unknown'){app.innerHTML='<div class="wrap" style="padding:64px 0"><div class="empty">Connecting to server storage…</div></div>';await checkServer();if(location.hash!=='#/new')return}
+ return studioRender(id,id?get(id):null)}
+function studioRender(id,p0){let p=p0||null;
+ if(id&&!p){{app.innerHTML='<div class="wrap" style="padding:64px 0"><div class="empty"><h3 style="color:var(--text)">Project not found</h3><p>It may have been deleted, or its saved data is unreadable.</p><a class="btn" href="#/dashboard">Back to projects</a></div></div>';return}}
+ cur=p?{...p,src:p.src||'local'}:{id:null,name:'',type:'cafe',desc:'',audience:'',style:'Modern',pages:['Services','Gallery'],html:'',generatedAt:null,mode:null,created:null,version:0,src:(srv.state==='ready'?'server':'local')};
  aiBusy=false;cur.history=Array.isArray(cur.history)?cur.history.filter(h=>h&&typeof h.instruction==='string'&&typeof h.prev==='string'):[];const saved=p&&p.html;draft=saved?{html:p.html,at:p.generatedAt,mode:p.mode,saved:true}:null;
  const pg=['Services','Pricing','Gallery','Blog'];
  app.innerHTML=`<div class="wrap"><div class="ws"><div class="card f"><h2 style="margin:0 0 4px">${id?'Project settings':'Describe your business'}</h2><p class="note" style="margin:0">Mode: <b>Demonstration (templates)</b>. AI generation is not configured.</p>
@@ -189,11 +353,11 @@ function studio(id){let p=null,corrupt=false;
  <label>Pages and features</label><div style="display:flex;gap:12px;flex-wrap:wrap">${pg.map(x=>`<label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" style="width:auto" class="pgc" value="${x}" ${cur.pages.includes(x)?'checked':''}>${x}</label>`).join('')}</div>
  <p style="margin:18px 0 0"><button class="btn" id="gen" style="width:100%">Generate Website</button></p>
  <div class="info" id="state"></div>${aiPanel()}</div>
- <div class="pv"><div class="pvh"><a class="btn ghost sm" id="bk" href="#/dashboard">&larr; Projects</a><b style="margin-right:auto">Preview</b><button class="btn ghost sm" id="vd">Desktop</button><button class="btn ghost sm" id="vm">Mobile</button><button class="btn ghost sm" id="sv">Save project</button><button class="btn ghost sm" id="ex">Export HTML</button><button class="btn ghost sm" id="dp">Deploy</button></div><div class="pvb" id="pvb"></div></div></div></div>`;
+ <div class="pv"><div class="pvh"><a class="btn ghost sm" id="bk" href="#/dashboard">&larr; Projects</a><b style="margin-right:auto">Preview</b><span id="savest" class="badge" role="status" aria-live="polite"></span><button class="btn ghost sm" id="vd">Desktop</button><button class="btn ghost sm" id="vm">Mobile</button><button class="btn ghost sm" id="sv">Save project</button><button class="btn ghost sm" id="ex">Export HTML</button><button class="btn ghost sm" id="dp">Deploy</button></div><div class="pvb" id="pvb"></div></div></div></div>`;
  $('#t').value=cur.type;$('#st').value=cur.style;
  $('#gen').onclick=generate;$('#vd').onclick=()=>setView(false);$('#vm').onclick=()=>setView(true);$('#sv').onclick=saveProj;$('#ex').onclick=exportHtml;$('#dp').onclick=deployInfo;
- mobile=false;showPv();stateBox();aiInit();
- $('#bk').onclick=e=>{if(draft&&!draft.saved){e.preventDefault();modal('<h3>Unsaved changes</h3><p class="note">The current preview has changes that are not saved to this project.</p><div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px"><button class="btn ghost sm" data-x>Stay</button><button class="btn ghost sm" id="lv">Leave without saving</button><button class="btn sm" id="sl">Save and leave</button></div>');
+ mobile=false;initSaver();showPv();stateBox();aiInit();bindForm();recoveryPrompt();
+ $('#bk').onclick=e=>{if(saver&&saver.isPending()){e.preventDefault();leaveServer();return}if(draft&&!draft.saved){e.preventDefault();modal('<h3>Unsaved changes</h3><p class="note">The current preview has changes that are not saved to this project.</p><div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px"><button class="btn ghost sm" data-x>Stay</button><button class="btn ghost sm" id="lv">Leave without saving</button><button class="btn sm" id="sl">Save and leave</button></div>');
   $('#lv').onclick=()=>{closeM();draft=null;location.hash='#/dashboard'};$('#sl').onclick=()=>{saveProj();if(draft&&draft.saved){closeM();location.hash='#/dashboard'}else closeM()}}}}
 function read(){cur.name=$('#n').value.trim();cur.type=$('#t').value;cur.style=$('#st').value;cur.desc=$('#d').value.trim();cur.audience=$('#a').value.trim();cur.pages=[...document.querySelectorAll('.pgc:checked')].map(x=>x.value)}
 function paint(){}
@@ -203,17 +367,20 @@ function showPv(){const b=$('#pvb');if(!b)return;b.className='pvb'+(mobile?' m':
 function setView(m){mobile=m;const b=$('#pvb');b&&b.classList.toggle('m',m)}
 function stateBox(){stateBox0();aiRender()}
 function stateBox0(){const s=$('#state');if(!s)return;
- s.innerHTML=draft?`<b>Preview:</b> ${draft.saved?'<span class="badge ok">matches saved project</span>':'<span class="badge warn">unsaved draft</span>'}<br>Generated ${new Date(draft.at).toLocaleString()} · ${draft.mode==='demo'?'demonstration template (not AI)':'edited with AI'}${cur.history.length?' · '+cur.history.length+' edit(s)':''}<br><b>Saved project:</b> ${cur.id&&get(cur.id)&&get(cur.id).html?'has a saved website from '+new Date(get(cur.id).generatedAt).toLocaleString():'nothing saved yet'}`:'<b>Preview:</b> empty<br><b>Saved project:</b> '+(cur.id?'settings saved, no website yet':'not saved yet')}
+ const where=cur.src==='server'?'<span class="badge ok">Saved on server</span>':'<span class="badge warn">Local only · this browser</span>';
+ s.innerHTML=draft?`<b>Preview:</b> ${draft.saved?'<span class="badge ok">matches saved project</span>':'<span class="badge warn">unsaved changes</span>'}<br>Updated ${new Date(draft.at).toLocaleString()} · ${draft.mode==='demo'?'demonstration template (not AI)':'edited with AI'}${cur.history.length?' · '+cur.history.length+' edit(s)':''}<br><b>Project:</b> ${cur.id?where:(cur.src==='server'?'not saved yet (will autosave)':'not saved yet (local only)')}`:'<b>Preview:</b> empty<br><b>Project:</b> '+(cur.id?where:'not saved yet');
+ saveBadge()}
 function validate(){let ok=true;$('#e_n').textContent='';$('#e_d').textContent='';
  if(!cur.name){$('#e_n').textContent='Enter a project name.';ok=false}
  if(cur.desc.length<20){$('#e_d').textContent='Describe your business in at least 20 characters.';ok=false}return ok}
-function generate(){read();if(!validate())return;if(aiBusy){toast('Wait for the AI edit to finish.');return}if(cur.history.length&&!confirm('Regenerating replaces your AI edits in the preview. The saved project is unchanged until you click Save project. Continue?'))return;const b=$('#gen');b.disabled=true;b.textContent='Generating…';
+function generate(){read();if(!validate())return;if(aiBusy){toast('Wait for the AI edit to finish.');return}if((cur.history.length||(saver&&draft&&cur.id))&&!confirm('Regenerating replaces the current website'+(saver?' and autosaves the new version over the saved one':' in the preview')+'. Continue?'))return;const b=$('#gen');b.disabled=true;b.textContent='Generating…';
  $('#pvb').innerHTML='<div class="ph"><div class="spin"></div>Building your website…</div>';
- setTimeout(()=>{try{const html=buildSite(cur);draft={html,at:Date.now(),mode:'demo',saved:false};cur.history=[];showPv()}catch(e){$('#pvb').innerHTML='<div class="ph">Generation failed: '+esc(e.message)+'<br>Try again.</div>'}
+ setTimeout(()=>{try{const html=buildSite(cur);draft={html,at:Date.now(),mode:'demo',saved:false};cur.history=[];showPv();touchSave()}catch(e){$('#pvb').innerHTML='<div class="ph">Generation failed: '+esc(e.message)+'<br>Try again.</div>'}
   b.disabled=false;b.textContent=draft?'Regenerate Website':'Generate Website';stateBox();toast(aiConfigured?'Generated':'Generated in demonstration mode (template, not AI)')},500)}
 function saveProj(){read();if(!cur.name){$('#e_n').textContent='Enter a project name.';return}
+ if(saver){touchSave();saver.flush();return}
  const l=load();const rec={...cur,id:cur.id||('p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)),created:cur.created||Date.now()};
- if(draft){rec.html=draft.html;rec.generatedAt=draft.at;rec.mode=draft.mode}rec.history=(cur.history||[]).slice(-10);
+ delete rec.src;delete rec.version;if(draft){rec.html=draft.html;rec.generatedAt=draft.at;rec.mode=draft.mode}rec.history=(cur.history||[]).slice(-10);
  const i=l.findIndex(x=>x.id===rec.id);i>=0?l[i]=rec:l.push(rec);
  if(!save(l))return;cur=rec;if(draft)draft.saved=true;stateBox();toast('Project saved');if(location.hash.indexOf(rec.id)<0)history.replaceState(null,'','#/project/'+rec.id)}
 function exportHtml(){if(!draft){toast('Generate a website first.');return}read();const n=(cur.name||'website').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'website';
@@ -221,7 +388,7 @@ function exportHtml(){if(!draft){toast('Generate a website first.');return}read(
 function deployInfo(){modal(`<h3>Deployment is not connected</h3><p class="note">Nothing has been deployed. To publish this site now: use Export HTML, then upload the file to a static host (Netlify Drop, Cloudflare Pages, GitHub Pages).</p><p class="note">To add one-click deploy, LaunchForge needs a server with provider credentials (for example a Netlify or Vercel API token) kept in environment variables, never in browser code.</p><div style="text-align:right;margin-top:12px"><button class="btn sm" data-x>Close</button></div>`)}
 /* ---------- AI editor ---------- */
 const EX=['Make it look more premium and luxurious','Change the colour scheme to black and gold','Add a testimonials section','Make the hero section more modern','Rewrite the text to sound more professional','Add a pricing section with three plans'];
-function aiPanel(){return `<div class="ai" id="ai"><h3 style="margin:0 0 4px;font-size:17px">Change anything with AI</h3><p class="note" style="margin:0 0 8px">Describe a change and the AI rewrites the website. The preview updates immediately; click Save project to keep it. Saved projects live in this browser only (localStorage), not in the cloud.</p><div id="aist"></div>
+function aiPanel(){return `<div class="ai" id="ai"><h3 style="margin:0 0 4px;font-size:17px">Change anything with AI</h3><p class="note" style="margin:0 0 8px">Describe a change and the AI rewrites the website. The preview updates immediately. Server-saved projects autosave; local-only projects need Save project and stay in this browser only.</p><div id="aist"></div>
 <label for="ai_p">Your instruction</label><textarea id="ai_p" rows="3" maxlength="1000" placeholder="e.g. Add a testimonials section"></textarea>
 <div class="chips">${EX.map(x=>`<button type="button" class="chip" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
 <div id="aimsg" role="status" aria-live="polite"></div>
@@ -234,7 +401,7 @@ function aiRender(){const st=$('#aist');if(!st)return;
  $('#ai_go').disabled=aiBusy||!draft;$('#ai_go').textContent=aiBusy?'Applying…':'Apply Changes';$('#ai_p').disabled=aiBusy;$('#ai_undo').disabled=aiBusy||!cur.history.length;
  $('#aih').innerHTML=cur.history.length?'<p class="note" style="margin:12px 0 4px">Edit history (newest first)</p><ol class="hist" reversed>'+cur.history.slice().reverse().map(h=>'<li>'+esc(h.instruction)+' <span class="note">'+new Date(h.at).toLocaleTimeString()+'</span></li>').join('')+'</ol>':'';
  if(!draft&&!aiBusy&&!$('#aimsg').textContent)aiMsg('','Generate a website first to enable AI editing.')}
-async function health(){aiStatus='checking';aiRender();try{const c=new AbortController(),t=setTimeout(()=>c.abort(),6000);const r=await fetch(apiBase()+'/api/health',{signal:c.signal});clearTimeout(t);const j=await r.json();aiStatus=j&&j.aiConfigured?'ready':'noconfig'}catch(e){aiStatus='down'}aiRender()}
+async function health(){aiStatus='checking';aiRender();try{const c=new AbortController(),t=setTimeout(()=>c.abort(),20000);const r=await fetch(apiBase()+'/api/health',{signal:c.signal});clearTimeout(t);const j=await r.json();aiStatus=j&&j.aiConfigured?'ready':'noconfig'}catch(e){aiStatus='down'}aiRender()}
 function aiInit(){document.querySelectorAll('[data-ex]').forEach(b=>b.onclick=()=>{$('#ai_p').value=b.dataset.ex;$('#ai_p').focus()});
  $('#ai_go').onclick=applyEdit;$('#ai_undo').onclick=undoEdit;$('#ai_url').value=localStorage.getItem('launchforge.apiBase')||'';
  $('#ai_us').onclick=()=>{const v=$('#ai_url').value.trim();if(v&&!/^https?:\/\//i.test(v)){aiMsg('err','Enter a full URL starting with http:// or https://');return}v?localStorage.setItem('launchforge.apiBase',v):localStorage.removeItem('launchforge.apiBase');health()};health()}
@@ -251,11 +418,11 @@ async function applyEdit(){
   if(cur!==me)return;
   let h=j.html;if(!/<\/html>\s*$/i.test(h.trim()))throw new Error('The AI returned an incomplete page.');
   if(h.indexOf('scrollIntoView')<0)h=h.replace(/<\/body>/i,NAVJS+'</body>');
-  cur.history.push({id:Date.now(),instruction:ins,at:Date.now(),prev:draft.html});cur.history=cur.history.slice(-10);
-  draft={html:h,at:Date.now(),mode:'ai',saved:false};showPv();$('#ai_p').value='';aiMsg('ok','Changes applied. The preview is updated but not saved yet. Click Save project to keep it.');
+  cur.history.push({id:Date.now(),instruction:ins,at:Date.now(),prev:draft.html});cur.history=cur.history.slice(cur.src==='server'?-5:-10);
+  draft={html:h,at:Date.now(),mode:'ai',saved:false};showPv();$('#ai_p').value='';touchSave();aiMsg('ok',saver?'Changes applied. Autosaving to the server…':'Changes applied. The preview is updated but not saved yet. Click Save project to keep it.');
  }catch(e){if(cur===me){const net=e.name==='TypeError'?'Could not reach the AI backend (network error). ':e.name==='AbortError'?'The request timed out. ':'';aiMsg('err',net+(net?'':e.message+' ')+'Your website was not changed.')}}
  finally{clearTimeout(to);if(cur===me){aiBusy=false;stateBox()}}
 }
-function undoEdit(){if(!cur.history.length||aiBusy)return;const h=cur.history.pop();draft={html:h.prev,at:Date.now(),mode:cur.history.length?'ai':'demo',saved:false};showPv();aiMsg('ok','Undid: "'+h.instruction+'". The preview is unsaved.');stateBox()}
+function undoEdit(){if(!cur.history.length||aiBusy)return;const h=cur.history.pop();draft={html:h.prev,at:Date.now(),mode:cur.history.length?'ai':'demo',saved:false};showPv();touchSave();aiMsg('ok','Undid: "'+h.instruction+'".'+(saver?' Autosaving…':' The preview is unsaved.'));stateBox()}
 route();
 </script></body></html>
