@@ -72,7 +72,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 const $=s=>document.querySelector(s), app=$('#app'), KEY='launchforge.projects.v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let draft=null, aiConfigured=false, aiStatus='checking', aiBusy=false;
-const apiBase=()=>(localStorage.getItem('launchforge.apiBase')||window.LAUNCHFORGE_API_BASE||(location.protocol==='file:'?'http:'+'//localhost:3000':(/^(localhost|127\.0\.0\.1)$/.test(location.hostname)?'':'https:'+'//launchforge-4a6u.onrender.com'))).replace(/\/+$/,'');
+const apiBase=()=>(localStorage.getItem('launchforge.apiBase')||window.LAUNCHFORGE_API_BASE||(location.protocol==='file:'?'http:'+'//localhost:3000':(/^(localhost|127\.0\.0\.1)$/.test(location.hostname)?'':(location.hostname.endsWith('.onrender.com')?'':'https:'+'//launchforge-4a6u.onrender.com')))).replace(/\/+$/,'');
 const NAVJS='<script>document.addEventListener("click",function(ev){var a=ev.target.closest&&ev.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";ev.preventDefault();if(h.charAt(0)==="#"){var el=document.getElementById(h.slice(1));if(el)el.scrollIntoView({behavior:"smooth",block:"start"})}});<\/script>';
 addEventListener('beforeunload',e=>{if((draft&&!draft.saved)||[saver,lastSaver].some(x=>x&&x.isPending())){e.preventDefault();e.returnValue=''}});
 /* ---------- storage (browser localStorage prototype) ---------- */
