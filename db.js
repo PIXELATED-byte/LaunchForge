@@ -1,6 +1,5 @@
 // Database access. The connection string comes ONLY from the DATABASE_URL environment variable.
-const fs = require('fs');
-const path = require('path');
+const { pendingMigrations, applyMigrations } = require('./migrate');
 
 let pool = null;
 let schemaPromise = null;
@@ -61,10 +60,20 @@ async function query(text, params, { retry = false } = {}) {
   }
 }
 
+// The runtime never changes the schema by itself. It only verifies that every migration has been applied
+// (run `npm run migrate -- --apply`). For local development only, AUTO_MIGRATE=true applies them automatically.
 function ensureSchema() {
   if (!schemaPromise) {
-    const sql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-    schemaPromise = query(sql, undefined, { retry: true }).then(() => true).catch(e => { schemaPromise = null; throw e; });
+    schemaPromise = (async () => {
+      const p = getPool();
+      try {
+        if (process.env.AUTO_MIGRATE === 'true' && process.env.NODE_ENV !== 'production' && process.env.RENDER !== 'true') {
+          await applyMigrations(p);
+        }
+        if ((await pendingMigrations(p)).length) throw new DbError('SCHEMA_OUTDATED', 'Database migrations are pending.');
+        return true;
+      } catch (e) { throw e instanceof DbError ? e : wrap(e); }
+    })().catch(e => { schemaPromise = null; throw e; });
   }
   return schemaPromise;
 }
@@ -75,12 +84,12 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
 }
 
-// 'not_configured' | 'connected' | 'unavailable'. Running SELECT 1 also wakes a sleeping Neon compute.
+// 'not_configured' | 'connected' | 'needs_migration' | 'unavailable'. Running SELECT 1 also wakes a sleeping Neon compute.
 async function status() {
   if (!configured()) return 'not_configured';
   // Capped at 5s in total so /api/health stays fast even when the database is down or waking up.
   try { await withTimeout((async () => { await query('SELECT 1', undefined, { retry: true }); await ensureSchema(); })(), 5000); return 'connected'; }
-  catch (e) { return e.code === 'DB_NOT_CONFIGURED' ? 'not_configured' : 'unavailable'; }
+  catch (e) { return e.code === 'DB_NOT_CONFIGURED' ? 'not_configured' : e.code === 'SCHEMA_OUTDATED' ? 'needs_migration' : 'unavailable'; }
 }
 
 async function close() {
@@ -88,4 +97,4 @@ async function close() {
   if (p) await p.end();
 }
 
-module.exports = { DbError, configured, query, ensureSchema, status, close };
+module.exports = { DbError, configured, getPool, query, ensureSchema, status, close };
