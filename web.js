@@ -50,7 +50,14 @@ function sessionAdapter(req) {
         });
       });
     },
-    end() { return new Promise((resolve, reject) => req.session.destroy(err => (err ? reject(err) : resolve()))); }
+    end() { return new Promise((resolve, reject) => req.session.destroy(err => (err ? reject(err) : resolve()))); },
+    // Short-lived values bound to this browser's session (the OAuth state/PKCE verifier). take() is single-use.
+    stash(key, value) { return new Promise((resolve, reject) => { req.session[key] = value; req.session.save(e => (e ? reject(e) : resolve())); }); },
+    take(key) {
+      const v = req.session && req.session[key];
+      if (v === undefined) return Promise.resolve(null);
+      return new Promise((resolve, reject) => { delete req.session[key]; req.session.save(e => (e ? reject(e) : resolve(v))); });
+    }
   };
 }
 function clearSessionCookie(res) {

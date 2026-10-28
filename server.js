@@ -13,6 +13,7 @@ const { createRouter } = require('./projects');
 const { pgUsers } = require('./users');
 const { hasher } = require('./passwords');
 const { createAuthApi } = require('./auth');
+const { createOAuthApi } = require('./oauth');
 const { authenticate, makeOriginPolicy } = require('./security');
 const web = require('./web');
 
@@ -69,6 +70,33 @@ async function authGuard(req, res, next) {
   }
 }
 app.use('/api/edit', authGuard);
+
+// Social sign-in. These are browser navigations (not fetch calls), so they are plain GET routes; Apple answers with a cross-site form POST.
+// Their protection is the single-use `state` bound to the session (see oauth.js), not the Origin/CSRF-header rule used by the JSON API.
+const oauth = createOAuthApi(deps);
+const oauthCtx = (req, extra) => ({ provider: req.params.provider, session: web.sessionAdapter(req), selfOrigin: req.protocol + '://' + req.get('host'), ip: req.ip, ...extra });
+const oauthRun = fn => async (req, res) => {
+  try {
+    const out = await fn(req);
+    if (out.redirect) return res.redirect(303, out.redirect);
+    return res.status(out.status).json(out.body);
+  } catch (e) {
+    console.error('[oauth] route error:', e && e.name);
+    return res.redirect(303, '/#/login?oauth_error=failed');
+  }
+};
+app.get('/api/auth/providers', async (req, res) => {
+  try { res.json(await oauth.providers()); }
+  catch (e) { res.status(503).json({ error: { code: 'AUTH_UNAVAILABLE', message: 'Login is temporarily unavailable.' } }); }
+});
+app.get('/api/auth/oauth/:provider/start', oauthRun(req => oauth.start(oauthCtx(req))));
+app.get('/api/auth/oauth/:provider/callback', oauthRun(req => oauth.callback(oauthCtx(req, { params: req.query }))));
+app.post('/api/auth/oauth/apple/callback', express.urlencoded({ extended: false, limit: '20kb' }), oauthRun(req => { req.params.provider = 'apple'; return oauth.callback(oauthCtx(req, { params: req.body })); }));
+// Apple asks you to prove you own the domain by serving a file it gives you. Set APPLE_DOMAIN_ASSOCIATION to that file's content.
+app.get('/.well-known/apple-developer-domain-association.txt', (req, res) => {
+  const t = String(process.env.APPLE_DOMAIN_ASSOCIATION || '').replace(/\\n/g, '\n');
+  return t ? res.type('text/plain').send(t) : res.status(404).end();
+});
 
 app.use('/api/auth', createRouter(createAuthApi(deps, { originPolicy }), web.sessionAdapter, { limit: '20kb', onClearSession: web.clearSessionCookie }));
 app.use('/api/projects', createRouter(createApi(() => deps.getStore(), { originPolicy }), web.sessionAdapter, { limit: '1200kb' }));

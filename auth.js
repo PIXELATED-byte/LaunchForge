@@ -67,8 +67,9 @@ function createAuthApi(deps, { originPolicy, registerPerHour = 10, loginFailsPer
         if (pairLimit.blocked(k1) || ipLimit.blocked(k2)) return E(429, 'RATE_LIMIT', 'Too many login attempts. Try again in a few minutes.');
         const pw = typeof body.password === 'string' && body.password.length <= 128 ? body.password : '';
         const user = email ? await deps.users.findByEmail(email) : null;
-        const ok = await deps.hasher.verify(user ? user.passwordHash : await getDummy(), pw);
-        if (!user || !ok) { pairLimit.add(k1); ipLimit.add(k2); return E(401, 'INVALID_CREDENTIALS', 'Incorrect email or password.'); }
+        const hasPw = Boolean(user && user.passwordHash);
+        const ok = await deps.hasher.verify(hasPw ? user.passwordHash : await getDummy(), pw);   // same cost for unknown emails and social-only accounts
+        if (!hasPw || !ok) { pairLimit.add(k1); ipLimit.add(k2); return E(401, 'INVALID_CREDENTIALS', 'Incorrect email or password.'); }
         pairLimit.reset(k1);
         const { csrf } = await req.session.start(user.id);   // new session id on every login (prevents fixation)
         await deps.users.touchLogin(user.id);

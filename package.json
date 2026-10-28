@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "migrate": "node scripts/migrate.js",
+    "oauth:check": "node scripts/oauth-check.js",
     "pretest": "node -e \"require('fs').existsSync('test')&&require('fs').readdirSync('test').some(f=>f.endsWith('.test.js'))||(console.error('ERROR: test/ folder or *.test.js files are missing'),process.exit(1))\"",
     "test": "node --test test/*.test.js"
   },
