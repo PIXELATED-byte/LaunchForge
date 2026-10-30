@@ -5,8 +5,9 @@
 //  * state: a random value stored in the server-side session and compared in constant time; single use; expires after 10 minutes.
 //  * PKCE (S256) for Google and GitHub; nonce for Google and Apple (OpenID Connect), checked inside the returned ID token.
 //  * Client secrets exist only in server environment variables. They are never placed in a URL, a redirect, a response body or a log line.
-//  * The ID token comes straight from the provider's token endpoint over TLS, so (OIDC Core 3.1.3.7) its claims are checked
-//    (issuer, audience, expiry, nonce) instead of its signature.
+//  * The ID token's SIGNATURE is verified with `jose` (RS256 only) against the provider's fixed JWKS URL (JWKS_URLS below). Issuer, audience,
+//    expiry, issued-at, nonce and subject are checked as well. Key URLs or keys supplied inside a token (jku, jwk, x5u, x5c) are rejected, never used.
+//    `jose` v6 is ESM-only, so it is loaded lazily with import() and can be replaced through deps.jose (tests use local keys, no network).
 //  * Only a provider-VERIFIED email is accepted for a NEW account. A social login is never merged into an existing account that
 //    has the same email (the password sign-up does not verify emails, so merging would allow account takeover). That case is refused.
 //  * The session id is regenerated on success (no fixation). Redirect targets are fixed paths, never taken from the request.
@@ -25,6 +26,11 @@ function safeEqual(a, b) {
   const x = Buffer.from(a), y = Buffer.from(b);
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
+
+// The ONLY places signing keys are ever fetched from. Never derived from a token, a request or the environment.
+const JWKS_URLS = Object.freeze({ google: 'https://www.googleapis.com/oauth2/v3/certs', apple: 'https://appleid.apple.com/auth/keys' });
+let joseModule = null;
+const loadJose = () => joseModule || (joseModule = import('jose').catch(e => { joseModule = null; throw e; }));
 
 const PROVIDERS = {
   google: { label: 'Google', authorize: 'https://accounts.google.com/o/oauth2/v2/auth', token: 'https://oauth2.googleapis.com/token', scope: 'openid email', oidc: true, pkce: true, issuers: ['https://accounts.google.com', 'accounts.google.com'], extra: { prompt: 'select_account' }, vars: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'] },
@@ -76,20 +82,24 @@ function appleClientSecret(cfg, nowMs) {
   return head + '.' + body + '.' + b64u(sig);
 }
 
-function decodeJwtPayload(token) {
-  const parts = String(token || '').split('.');
-  if (parts.length !== 3) fail('provider_error', 'id_token is not a JWT');
-  try { const p = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')); if (p && typeof p === 'object') return p; } catch (e) { /* fall through */ }
-  return fail('provider_error', 'id_token payload unreadable');
-}
-function checkIdToken(claims, cfg, nonce, nowMs) {
-  const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-  if (!cfg.issuers.includes(claims.iss)) fail('provider_error', 'wrong issuer');
-  if (!aud.includes(cfg.clientId)) fail('provider_error', 'wrong audience');
-  if (typeof claims.exp !== 'number' || claims.exp * 1000 <= nowMs) fail('provider_error', 'id_token expired');
-  if (typeof claims.iat === 'number' && claims.iat * 1000 > nowMs + 5 * 60000) fail('provider_error', 'id_token issued in the future');
-  if (!safeEqual(claims.nonce, nonce)) fail('state', 'nonce mismatch');
-  if (typeof claims.sub !== 'string' || !claims.sub || claims.sub.length > 255) fail('provider_error', 'bad subject');
+// Verifies the signature (RS256 only, keys from the provider's fixed JWKS) and every claim. Returns the verified payload or throws OAuthError.
+async function verifyIdToken(jose, jwks, cfg, token, nonce, nowMs) {
+  if (typeof token !== 'string' || !token || token.length > 16384) fail('provider_error', 'id_token missing');
+  let header;
+  try { header = jose.decodeProtectedHeader(token); } catch (e) { return fail('provider_error', 'id_token header unreadable'); }
+  if (header.alg !== 'RS256') fail('provider_error', 'unsupported id_token algorithm');
+  for (const k of ['jku', 'jwk', 'x5u', 'x5c']) if (k in header) fail('provider_error', 'id_token carries its own key reference');
+  let payload;
+  try {
+    ({ payload } = await jose.jwtVerify(token, jwks, {
+      algorithms: ['RS256'], issuer: cfg.issuers, audience: cfg.clientId,
+      currentDate: new Date(nowMs), clockTolerance: 30, requiredClaims: ['iss', 'aud', 'exp', 'iat', 'sub']
+    }));
+  } catch (e) { return fail('provider_error', 'id_token rejected: ' + String((e && (e.code || e.name)) || 'error').slice(0, 60)); }
+  if (typeof payload.iat !== 'number' || payload.iat * 1000 > nowMs + 5 * 60000) fail('provider_error', 'id_token issued in the future');
+  if (!safeEqual(payload.nonce, nonce)) fail('state', 'nonce mismatch');
+  if (typeof payload.sub !== 'string' || !payload.sub || payload.sub.length > 255) fail('provider_error', 'bad subject');
+  return payload;
 }
 
 function createOAuthApi(deps) {
@@ -97,6 +107,8 @@ function createOAuthApi(deps) {
   const now = deps.now || Date.now;
   const doFetch = deps.fetch || ((...a) => globalThis.fetch(...a));
   const limit = createLimiter(40, 10 * 60000);   // per IP, start + callback together
+  const jwksSets = {};   // one cached remote key set per provider; the URL is always the fixed one from JWKS_URLS
+  const jwksFor = (jose, cfg) => jwksSets[cfg.name] || (jwksSets[cfg.name] = jose.createRemoteJWKSet(new URL(JWKS_URLS[cfg.name]), { timeoutDuration: 5000 }));
   const log = (provider, code, detail) => console.error('[oauth]', provider, code, detail || '');
 
   async function getJson(url, init) {
@@ -118,8 +130,8 @@ function createOAuthApi(deps) {
   // -> { subject, email(): Promise<{ email, verified }> }. The email is fetched lazily: a returning user needs only the subject.
   async function identify(cfg, tokens, nonce) {
     if (cfg.oidc) {
-      const claims = decodeJwtPayload(tokens.id_token);
-      checkIdToken(claims, cfg, nonce, now());
+      const jose = deps.jose || await loadJose();
+      const claims = await verifyIdToken(jose, jwksFor(jose, cfg), cfg, tokens.id_token, nonce, now());
       return { subject: claims.sub, email: async () => ({ email: claims.email, verified: claims.email_verified === true || claims.email_verified === 'true' }) };
     }
     if (typeof tokens.access_token !== 'string' || !tokens.access_token) fail('provider_error', 'no access token');
@@ -217,4 +229,4 @@ function describeSetup(env = process.env, selfOrigin = 'http://localhost:3000') 
   });
 }
 
-module.exports = { createOAuthApi, providerConfig, publicOrigin, callbackUrl, buildAuthorizeUrl, appleClientSecret, decodeJwtPayload, checkIdToken, describeSetup, PROVIDERS, NAMES, STATE_TTL_MS };
+module.exports = { createOAuthApi, providerConfig, publicOrigin, callbackUrl, buildAuthorizeUrl, appleClientSecret, verifyIdToken, JWKS_URLS, describeSetup, PROVIDERS, NAMES, STATE_TTL_MS };

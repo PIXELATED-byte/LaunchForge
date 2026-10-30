@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
-const { createOAuthApi, providerConfig, publicOrigin, appleClientSecret, describeSetup, STATE_TTL_MS } = require('../oauth');
+const { createOAuthApi, providerConfig, publicOrigin, appleClientSecret, describeSetup, JWKS_URLS, STATE_TTL_MS } = require('../oauth');
 const { createAuthApi } = require('../auth');
 const { makeOriginPolicy } = require('../security');
 const { memoryUsers } = require('../users');
@@ -19,8 +19,62 @@ const ENV = {
   GITHUB_CLIENT_ID: 'gh-id', GITHUB_CLIENT_SECRET: SECRETS.github,
   APPLE_CLIENT_ID: 'com.example.web', APPLE_TEAM_ID: 'TEAM123456', APPLE_KEY_ID: 'KEY1234567', APPLE_PRIVATE_KEY: APPLE_PEM.replace(/\n/g, '\\n')
 };
-const b64u = o => Buffer.from(typeof o === 'string' ? o : JSON.stringify(o)).toString('base64url');
-const jwt = claims => b64u({ alg: 'RS256', typ: 'JWT' }) + '.' + b64u(claims) + '.' + b64u('sig');
+// Offline guarantee: if anything tried to reach a real network (for example jose downloading Google's or Apple's keys) the test would fail loudly.
+globalThis.fetch = () => { throw new Error('network access is not allowed in tests'); };
+
+const seg = o => Buffer.from(typeof o === 'string' ? o : JSON.stringify(o)).toString('base64url');
+
+// ---- Genuine, locally signed ID tokens. Nothing here touches the network.
+// Keys are made with Node's crypto (an oracle independent of jose) and tokens are signed by hand. The code under test verifies them with the REAL jose;
+// only its key LOOKUP is replaced by a local key set (see testJose). jose v6 is ESM-only, so it is imported lazily, exactly as oauth.js does.
+let J = null, KEYS = null;
+async function ensureCrypto() {
+  if (J) return;
+  const mod = await import('jose');
+  const rsa = (alg, kid) => { const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }); return { privateKey, jwk: { ...publicKey.export({ format: 'jwk' }), kid, alg, use: 'sig' } }; };
+  const p256 = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  KEYS = {
+    google: rsa('RS256', 'google-key-1'), google2: rsa('RS256', 'google-key-2'), apple: rsa('RS256', 'apple-key-1'),
+    attacker: rsa('RS256', 'attacker-key'), rs384: rsa('RS384', 'rs384-key'),
+    es256: { privateKey: p256.privateKey, jwk: { ...p256.publicKey.export({ format: 'jwk' }), kid: 'es256-key', alg: 'ES256', use: 'sig' } }
+  };
+  // What each provider "publishes": its own RS256 key(s) plus an RS384 and an ES256 key, so algorithm confusion has something to aim at.
+  KEYS.published = { google: [KEYS.google.jwk, KEYS.google2.jwk, KEYS.rs384.jwk, KEYS.es256.jwk], apple: [KEYS.apple.jwk, KEYS.rs384.jwk, KEYS.es256.jwk] };
+  J = mod;
+}
+// sign = { key, kid ('@trusted' = the provider's real key id), alg, header (extra/overriding header fields), mutate(token), raw, omit }
+async function mintIdToken(provider, claims, sign = {}) {
+  await ensureCrypto();
+  if (sign.omit) return undefined;
+  if (typeof sign.raw === 'string') return sign.raw;
+  const entry = KEYS[sign.key || provider], alg = sign.alg || 'RS256';
+  const kid = sign.kid === '@trusted' ? KEYS[provider].jwk.kid : sign.kid !== undefined ? sign.kid : entry.jwk.kid;
+  const input = seg({ alg, typ: 'JWT', kid, ...sign.header }) + '.' + seg(claims);
+  if (alg === 'none') return input + '.';
+  let sig;
+  if (alg === 'HS256') sig = crypto.createHmac('sha256', 'x'.repeat(32)).update(input).digest();
+  else if (alg === 'ES256') sig = crypto.sign('sha256', Buffer.from(input), { key: entry.privateKey, dsaEncoding: 'ieee-p1363' });
+  else sig = crypto.sign(alg === 'RS384' ? 'sha384' : 'sha256', Buffer.from(input), entry.privateKey);
+  const token = input + '.' + sig.toString('base64url');
+  return sign.mutate ? sign.mutate(token) : token;
+}
+const flipSignature = t => { const [h, p, s] = t.split('.'); return [h, p, s.slice(0, 10) + (s[10] === 'A' ? 'B' : 'A') + s.slice(11)].join('.'); };
+const swapPayload = patch => t => { const [h, p, s] = t.split('.'); return [h, seg({ ...JSON.parse(Buffer.from(p, 'base64url')), ...patch }), s].join('.'); };
+// The real jose, with exactly one difference: createRemoteJWKSet never goes to the network. It records the address it was given, refuses any
+// address other than the two fixed ones, and answers from the local key sets above. rec.verifies keeps the options oauth.js passes to jwtVerify.
+function testJose(world, rec) {
+  return {
+    decodeProtectedHeader: token => J.decodeProtectedHeader(token),
+    jwtVerify: (token, key, options) => { rec.verifies.push(options); return J.jwtVerify(token, key, options); },
+    createRemoteJWKSet: (url, options) => {
+      const href = String(url), which = href === JWKS_URLS.google ? 'google' : href === JWKS_URLS.apple ? 'apple' : null;
+      if (!which) throw new Error('refusing an unexpected JWKS address: ' + href);
+      rec.jwks.push({ href, options });
+      const set = J.createLocalJWKSet({ keys: KEYS.published[which] });
+      return async (header, token) => { if (world.jwksDown) throw Object.assign(new Error('JWKS endpoint unreachable'), { code: 'ERR_JWKS_TIMEOUT' }); return set(header, token); };
+    }
+  };
+}
 
 function fakeSession() {
   const data = {}; const s = { userId: null, started: 0 };
@@ -49,7 +103,10 @@ function fakeProviders(world = {}) {
         if (body.client_secret !== SECRETS.google) return json({ error: 'invalid_client' }, 401);
       }
       const now = Math.floor((world.now || Date.now()) / 1000);
-      return json({ id_token: jwt({ iss: apple ? 'https://appleid.apple.com' : 'https://accounts.google.com', aud: apple ? 'com.example.web' : 'g-id', exp: now + 3600, iat: now, nonce: world.nonce, ...cfg }) });
+      const claims = { iss: apple ? 'https://appleid.apple.com' : 'https://accounts.google.com', aud: apple ? 'com.example.web' : 'g-id', exp: now + 3600, iat: now, nonce: world.nonce, ...cfg };
+      const token = await mintIdToken(apple ? 'apple' : 'google', claims, world.sign);   // a really RSA-signed token (see world.sign for forgeries)
+      world.lastToken = token;
+      return json(token === undefined ? {} : { id_token: token });
     }
     if (u === 'https://github.com/login/oauth/access_token') {
       const want = world.challenge; const got = crypto.createHash('sha256').update(String(body.code_verifier)).digest('base64url');
@@ -64,8 +121,9 @@ function fakeProviders(world = {}) {
 }
 function setup({ env = ENV, world = {}, users = memoryUsers(), ready = true, clock = { t: 1_800_000_000_000 } } = {}) {
   const prov = fakeProviders(world);
+  const rec = { jwks: [], verifies: [] };
   const u = ready ? users : Object.assign(users, { oauthReady: async () => false });
-  const api = createOAuthApi({ users: u, env, fetch: prov.fetch, now: () => clock.t });
+  const api = createOAuthApi({ users: u, env, fetch: prov.fetch, now: () => clock.t, jose: testJose(world, rec) });
   const session = fakeSession();
   const ctx = { session, selfOrigin: 'http://ignored.local', ip: '198.51.100.' + Math.floor(Math.random() * 200) };
   world.now = clock.t;
@@ -76,7 +134,7 @@ function setup({ env = ENV, world = {}, users = memoryUsers(), ready = true, clo
     if (url) { world.nonce = url.searchParams.get('nonce'); world.challenge = url.searchParams.get('code_challenge'); }
     return { r, url, state: url && url.searchParams.get('state') };
   }
-  return { api, session, ctx, users: u, prov, world, clock, begin };
+  return { api, session, ctx, users: u, prov, world, clock, begin, rec };
 }
 const withLog = async fn => { const lines = []; const orig = console.error; console.error = (...a) => lines.push(a.join(' ')); try { return [await fn(), lines]; } finally { console.error = orig; } };
 const loginError = r => new URL(r.redirect, 'http://x').hash;
@@ -202,11 +260,14 @@ test('Apple: the callback uses the form fields, authenticates with a SIGNED clie
 });
 
 // ---------------------------------------------------------------- callback: refusals (each must create no user, no session, call no provider)
-async function refused(t, provider, params, expectedCode) {
-  const calls = t.prov.log.length, users = t.users._all().length;
+async function refused(t, provider, params, expectedCode, label = '') {
+  const calls = t.prov.log.length, users = t.users._all().length, started = t.session.started;
+  const sub = t.world[provider] && t.world[provider].sub, linked = sub ? await t.users.findByIdentity(provider, String(sub)) : null;
   const r = await t.api.callback({ provider, params, ...t.ctx });
-  assert.equal(loginError(r), '#/login?oauth_error=' + expectedCode, JSON.stringify(params));
-  assert.equal(t.session.userId, null); assert.equal(t.users._all().length, users);
+  assert.equal(loginError(r), '#/login?oauth_error=' + expectedCode, label + ' ' + JSON.stringify(params));
+  assert.equal(t.session.userId, null, label); assert.equal(t.session.started, started, label + ': no session was established');
+  assert.equal(t.users._all().length, users, label + ': no user was created');
+  if (sub) assert.equal(((await t.users.findByIdentity(provider, String(sub))) || {}).id, (linked || {}).id, label + ': no identity was linked or changed');
   return t.prov.log.length - calls;     // number of provider calls made
 }
 test('state is required, must match, is bound to the provider, expires after 10 minutes, and is single use', async () => {
@@ -257,6 +318,129 @@ test('ID token checks: wrong audience, wrong issuer, expired, wrong nonce, unver
   const t = setup(); t.world.google = { sub: 's', email: 'a@example.com', email_verified: true };
   const { state } = await t.begin('google'); t.world.nonce = 'a-different-nonce';
   await refused(t, 'google', { code: 'c', state }, 'state');
+});
+// ---------------------------------------------------------------- ID token SIGNATURE verification (real RSA signatures, local keys, offline)
+const BASE_CLAIMS = {
+  google: { sub: 'sub-1', email: 'a@example.com', email_verified: true },
+  apple: { sub: 'apple-sub-1', email: 'a@example.com', email_verified: 'true' }
+};
+const validFlow = async (provider, claims, sign) => {
+  const t = setup(); t.world[provider] = claims; if (sign) t.world.sign = sign;
+  const { state } = await t.begin(provider);
+  const r = await t.api.callback({ provider, params: { code: 'c', state }, ...t.ctx });
+  assert.equal(r.redirect, '/#/dashboard', provider + ' ' + JSON.stringify(sign || {}) + ' ' + JSON.stringify(claims));
+  return t;
+};
+test('genuine RS256 tokens are accepted (Google with either issuer spelling and either published key, and Apple); keys are looked up only at the two fixed addresses', async () => {
+  assert.deepEqual(JWKS_URLS, { google: 'https://www.googleapis.com/oauth2/v3/certs', apple: 'https://appleid.apple.com/auth/keys' });
+  assert.ok(Object.isFrozen(JWKS_URLS));
+  let t = await validFlow('google', BASE_CLAIMS.google);
+  assert.deepEqual(t.rec.jwks.map(j => j.href), [JWKS_URLS.google]);
+  assert.equal(t.users._all().length, 1); assert.ok(await t.users.findByIdentity('google', 'sub-1')); assert.equal(t.session.started, 1);
+  t.session.userId = null; const again = await t.begin('google');       // same app instance: the key set is created once and reused
+  await t.api.callback({ provider: 'google', params: { code: 'c2', state: again.state }, ...t.ctx });
+  assert.equal(t.rec.jwks.length, 1); assert.equal(t.users._all().length, 1);
+  await validFlow('google', { ...BASE_CLAIMS.google, iss: 'accounts.google.com' });
+  await validFlow('google', BASE_CLAIMS.google, { key: 'google2' });    // the provider rotated: a token signed by its second published key
+  t = await validFlow('apple', BASE_CLAIMS.apple);
+  assert.deepEqual(t.rec.jwks.map(j => j.href), [JWKS_URLS.apple]);
+  assert.ok(await t.users.findByIdentity('apple', 'apple-sub-1'));
+});
+test('jwtVerify is called with RS256 only, the provider\'s issuer(s) and audience, the required claims, a small tolerance and the injected clock', async () => {
+  const g = (await validFlow('google', BASE_CLAIMS.google)).rec.verifies[0];
+  assert.deepEqual(g.algorithms, ['RS256']);
+  assert.deepEqual(g.issuer, ['https://accounts.google.com', 'accounts.google.com']);
+  assert.equal(g.audience, 'g-id');
+  assert.deepEqual([...g.requiredClaims].sort(), ['aud', 'exp', 'iat', 'iss', 'sub']);
+  assert.ok(typeof g.clockTolerance === 'number' && g.clockTolerance <= 60);
+  assert.equal(g.currentDate.getTime(), 1_800_000_000_000);
+  const a = (await validFlow('apple', BASE_CLAIMS.apple)).rec.verifies[0];
+  assert.deepEqual(a.algorithms, ['RS256']); assert.deepEqual(a.issuer, ['https://appleid.apple.com']); assert.equal(a.audience, 'com.example.web');
+});
+const FORGERIES = [
+  { label: 'tampered signature', sign: { mutate: flipSignature } },
+  { label: 'payload changed after signing (sub swapped), original signature kept', sign: { mutate: swapPayload({ sub: 'victim-sub' }) } },
+  { label: 'unknown key id', sign: { kid: 'no-such-key' } },
+  { label: 'signed by an attacker key under the real key id', sign: { key: 'attacker', kid: '@trusted' } },
+  { label: 'signed by an attacker key under its own key id', sign: { key: 'attacker' } },
+  { label: 'alg none', sign: { alg: 'none' } },
+  { label: 'HS256', sign: { alg: 'HS256' } },
+  { label: 'RS384 with a key the provider really published', sign: { alg: 'RS384', key: 'rs384' } },
+  { label: 'ES256 with a key the provider really published', sign: { alg: 'ES256', key: 'es256' } },
+  { label: 'valid signature but a jku header (attacker key location)', sign: { header: { jku: 'https://evil.example/keys' } } },
+  { label: 'valid signature but an embedded jwk header', sign: { header: { jwk: { kty: 'RSA', n: 'sXch', e: 'AQAB' } } } },
+  { label: 'valid signature but an x5u header', sign: { header: { x5u: 'https://evil.example/cert.pem' } } },
+  { label: 'valid signature but an x5c header', sign: { header: { x5c: ['MIIB'] } } },
+  { label: 'wrong issuer', claims: () => ({ iss: 'https://evil.example' }) },
+  { label: 'issuer lookalike', claims: () => ({ iss: 'accounts.google.com.evil.example' }) },
+  { label: 'wrong audience', claims: () => ({ aud: 'someone-else' }) },
+  { label: 'expired an hour ago', claims: n => ({ exp: n - 3600 }) },
+  { label: 'expired 60 seconds ago (outside the tolerance)', claims: n => ({ exp: n - 60 }) },
+  { label: 'issued an hour in the future', claims: n => ({ iat: n + 3600, exp: n + 7200 }) },
+  ...['iss', 'aud', 'exp', 'iat', 'sub'].map(k => ({ label: 'missing required claim ' + k, claims: () => ({ [k]: undefined }) })),
+  { label: 'empty subject', claims: () => ({ sub: '' }) },
+  { label: 'wrong nonce', nonce: 'a-different-nonce', code: 'state' },
+  { label: 'no nonce in the token', claims: () => ({ nonce: undefined }), code: 'state' },
+  { label: 'token response has no id_token', sign: { omit: true } },
+  { label: 'id_token is not a JWT', sign: { raw: 'not-a-jwt' } },
+  { label: 'the provider\'s key set cannot be fetched (fails closed)', jwksDown: true }
+];
+test('forged or invalid ID tokens are refused for Google AND Apple: no user, no session, no linked identity, and the token never reaches a log line', async () => {
+  for (const provider of ['google', 'apple']) {
+    for (const f of FORGERIES) {
+      const label = provider + ': ' + f.label;
+      const t = setup(); const n = Math.floor(t.clock.t / 1000);
+      t.world[provider] = { ...BASE_CLAIMS[provider], ...(f.claims ? f.claims(n) : {}) };
+      if (f.sign) t.world.sign = f.sign;
+      t.world.jwksDown = Boolean(f.jwksDown);
+      const { state } = await t.begin(provider);
+      if (f.nonce) t.world.nonce = f.nonce;
+      const [providerCalls, lines] = await withLog(() => refused(t, provider, { code: 'c', state }, f.code || 'provider_error', label));
+      assert.equal(providerCalls, 1, label + ': only the token exchange was made');
+      assert.equal(await t.users.findByIdentity(provider, 'victim-sub'), null, label);
+      assert.equal(t.users._all().length, 0, label);
+      assert.ok(lines.length >= 1, label + ': the refusal is logged with a short code');
+      if (t.world.lastToken) assert.ok(!lines.join('\n').includes(t.world.lastToken), label + ': the token must never be logged');
+    }
+  }
+});
+test('REGRESSION: a forged ID token naming an already-linked identity cannot sign that user in, and nothing is created, linked or changed', async () => {
+  const users = memoryUsers(); const t = setup({ users });
+  t.world.google = { sub: 'linked-sub', email: 'owner@example.com', email_verified: true };       // 1. the real owner signs in once, with a genuine token
+  let { state } = await t.begin('google');
+  assert.equal((await t.api.callback({ provider: 'google', params: { code: 'c', state }, ...t.ctx })).redirect, '/#/dashboard');
+  const owner = await users.findByIdentity('google', 'linked-sub'); assert.ok(owner);
+  assert.equal(t.session.userId, owner.id);
+  t.session.userId = null; const started = t.session.started;                                      // a different, signed-out browser from here on
+  const attempts = [                                                                                 // 2. forged tokens, each aimed at the owner's identity
+    ['signed with an attacker key', { sub: 'linked-sub' }, { key: 'attacker' }],
+    ['attacker key under the real key id', { sub: 'linked-sub' }, { key: 'attacker', kid: '@trusted' }],
+    ['alg none', { sub: 'linked-sub' }, { alg: 'none' }],
+    ['HS256', { sub: 'linked-sub' }, { alg: 'HS256' }],
+    ['genuinely signed for another account, payload edited to the owner\'s sub', { sub: 'attacker-sub' }, { mutate: swapPayload({ sub: 'linked-sub' }) }],
+    ['forged token with a NEW sub and the owner\'s email (would link a second identity)', { sub: 'brand-new-sub' }, { key: 'attacker' }]
+  ];
+  for (const [label, claims, sign] of attempts) {
+    t.world.google = { email: 'owner@example.com', email_verified: true, ...claims }; t.world.sign = sign;
+    ({ state } = await t.begin('google'));
+    await withLog(() => refused(t, 'google', { code: 'c', state }, 'provider_error', label));
+    assert.equal(users._all().length, 1, label);
+    assert.equal(((await users.findByIdentity('google', 'linked-sub')) || {}).id, owner.id, label);
+    assert.equal(await users.findByIdentity('google', 'brand-new-sub'), null, label);
+    assert.equal(((await users.findByEmail('owner@example.com')) || {}).id, owner.id, label);
+  }
+  delete t.world.sign; t.world.google = { sub: 'linked-sub', email: 'owner@example.com', email_verified: true };   // 3. control: the genuine token still works
+  ({ state } = await t.begin('google'));
+  assert.equal((await t.api.callback({ provider: 'google', params: { code: 'c', state }, ...t.ctx })).redirect, '/#/dashboard');
+  assert.equal(t.session.userId, owner.id); assert.equal(t.session.started, started + 1); assert.equal(users._all().length, 1);
+});
+test('oauth.js has no unverified ID-token decoding left and exports no way to trust an unverified token', () => {
+  const mod = require('../oauth');
+  assert.equal(mod.decodeJwtPayload, undefined); assert.equal(mod.checkIdToken, undefined);
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'oauth.js'), 'utf8');
+  assert.ok(!/decodeJwtPayload|checkIdToken/.test(src));
+  assert.match(src, /jwtVerify\(/); assert.match(src, /algorithms:\s*\['RS256'\]/);
+  assert.ok(!/createRemoteJWKSet\([^)]*(header|token|jku|jwk)/.test(src), 'key locations never come from a token');
 });
 test('a wrong PKCE verifier or client secret makes the provider refuse; we show provider_error and create nothing', async () => {
   const t = setup(); t.world.google = { sub: 's', email: 'a@example.com', email_verified: true };
