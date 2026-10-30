@@ -62,9 +62,48 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.chip{background:var(--panel2);border:1px solid var(--line);border-radius:99px;padding:4px 10px;font-size:13px;color:var(--mute);cursor:pointer}.chip:hover{color:var(--text);border-color:var(--v)}
 .msg{margin-top:10px;padding:9px 12px;border-radius:10px;font-size:14px;background:var(--panel2)}.msg.ok{color:var(--ok)}.msg.err{color:var(--err)}
 .hist{margin:0;padding-left:18px;font-size:14px;color:var(--mute)}
+/* ---- sign in / create account ---- */
+.au{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);min-height:calc(100vh - 61px)}
+.au-side{position:relative;overflow:hidden;padding:72px 56px;background:radial-gradient(900px 520px at 8% 0%,rgba(139,92,246,.34),transparent 62%),radial-gradient(700px 420px at 100% 100%,rgba(109,63,224,.24),transparent 60%),#100d1b;border-right:1px solid var(--line);display:flex;flex-direction:column;justify-content:center}
+.au-side h2{font-size:clamp(30px,3.4vw,46px);line-height:1.08;letter-spacing:-.02em;margin:0 0 14px;max-width:520px}
+.au-side p{color:var(--mute);max-width:470px;margin:0 0 30px;font-size:17px}
+.au-pts{list-style:none;padding:0;margin:0;display:grid;gap:16px;max-width:470px}
+.au-pts li{display:flex;gap:12px;align-items:flex-start}.au-pts svg{flex:none;margin-top:2px;color:#a78bfa}
+.au-main{display:flex;align-items:center;justify-content:center;padding:48px 20px}
+.au-card{width:100%;max-width:420px}
+.au-tabs{display:grid;grid-template-columns:1fr 1fr;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:4px;margin:0 0 24px}
+.au-tabs a{text-align:center;padding:9px 10px;border-radius:9px;color:var(--mute);font-weight:600;font-size:15px;transition:background .15s,color .15s}
+.au-tabs a:hover{color:var(--text)}.au-tabs a[aria-current=page]{background:var(--panel2);color:var(--text);box-shadow:0 0 0 1px var(--line) inset}
+.au-tabs a:focus-visible{outline:2px solid var(--v);outline-offset:1px}
+.au h1{font-size:28px;line-height:1.2;letter-spacing:-.01em;margin:0 0 6px}.au-sub{color:var(--mute);margin:0 0 22px}
+.au-status{border:1px solid var(--line);background:var(--panel);border-radius:11px;padding:10px 12px;font-size:14px;color:var(--mute);margin:0 0 16px}
+.au-status.warn{border-color:#6b5316;color:var(--warn)}
+.au-social{display:grid;gap:10px}
+.au-sb{display:flex;align-items:center;gap:12px;width:100%;min-height:46px;padding:0 16px;border-radius:11px;border:1px solid var(--line);font-weight:600;font-size:15px;cursor:pointer;text-align:left;transition:transform .08s,box-shadow .15s,border-color .15s}
+.au-sb svg{flex:none;width:20px;height:20px}.au-sb .t{flex:1}.au-sb small{font-weight:500;font-size:12px;opacity:.8}
+.au-sb.google{background:#fff;color:#1f1f1f;border-color:#dadce0}.au-sb.github{background:#24292f;color:#fff;border-color:#3d444d}.au-sb.apple{background:#fff;color:#000;border-color:#dadce0}
+.au-sb:hover:not([aria-disabled=true]){transform:translateY(-1px);box-shadow:0 8px 20px rgba(0,0,0,.35)}
+.au-sb[aria-disabled=true]{opacity:.55;cursor:not-allowed}
+.au-sb:focus-visible{outline:2px solid #c4b5fd;outline-offset:2px}
+.au-or{display:flex;align-items:center;gap:12px;color:var(--mute);font-size:13px;margin:20px 0}.au-or:before,.au-or:after{content:"";flex:1;height:1px;background:var(--line)}
+.au-field{margin-bottom:14px}.au-field label{display:block;font-size:14px;font-weight:600;margin-bottom:6px}
+.au-in{position:relative}
+.au-in input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 14px;min-height:46px;transition:border-color .15s,box-shadow .15s}
+.au-in input:hover{border-color:#40395c}.au-in input:focus{outline:none;border-color:var(--v);box-shadow:0 0 0 3px rgba(139,92,246,.28)}
+.au-in input[aria-invalid=true]{border-color:var(--err)}.au-in input.pw{padding-right:50px}
+.au-eye{position:absolute;right:4px;top:4px;width:38px;height:38px;border:0;background:none;color:var(--mute);border-radius:8px;cursor:pointer;display:grid;place-items:center}
+.au-eye:hover{color:var(--text);background:var(--panel2)}
+.au-hint{font-size:13px;color:var(--mute);margin-top:6px}.au-fe{font-size:13px;color:var(--err);margin-top:6px}.au-fe:empty{display:none}
+.au-alert{border:1px solid #6e2b2b;background:rgba(248,113,113,.09);color:#fecaca;border-radius:11px;padding:10px 12px;font-size:14px;margin:0 0 14px}.au-alert:empty{display:none}.au-social+.au-alert{margin:12px 0 0}
+.au-submit{width:100%;min-height:48px;border-radius:11px;font-size:16px;display:flex;align-items:center;justify-content:center;gap:10px;margin-top:6px}
+.au-spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite}
+.au-legal{font-size:13px;color:var(--mute);margin:18px 0 0;text-align:center}.au-legal a{text-decoration:underline}
+.links a,.links button,#authnav a,#authnav button{white-space:nowrap}
+@media(max-width:560px){nav.top .wrap{gap:12px}.links{gap:12px}#authnav a.btn{display:none}}
+@media(max-width:880px){.au{grid-template-columns:1fr;min-height:0}.au-side{display:none}.au-main{padding:28px 18px 56px;align-items:flex-start}}
 </style></head><body>
 <nav class="top"><div class="wrap"><a class="logo" href="#/"><i></i>LaunchForge</a>
-<div class="links"><button class="l hide" data-s="features">Features</button><button class="l hide" data-s="pricing">Pricing</button><button class="l hide" data-s="faq">FAQ</button><a href="#/about" class="hide">About</a><a href="#/contact" class="hide">Contact</a><a class="btn sm" href="#/dashboard">Dashboard</a></div></div></nav>
+<div class="links"><button class="l hide" data-s="features">Features</button><button class="l hide" data-s="pricing">Pricing</button><button class="l hide" data-s="faq">FAQ</button><a href="#/about" class="hide">About</a><a href="#/contact" class="hide">Contact</a><a class="btn sm" href="#/dashboard">Dashboard</a><span id="authnav" style="display:flex;gap:10px;align-items:center"></span></div></div></nav>
 <main id="app"></main>
 <footer><div class="wrap"><span class="logo"><i></i>LaunchForge</span><a href="#/about">About</a><a href="#/contact">Contact</a><a href="#/privacy">Privacy</a><a href="#/terms">Terms</a><span class="sp note">From idea to online business.</span></div></footer>
 <div id="toast"></div>
@@ -72,7 +111,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 const $=s=>document.querySelector(s), app=$('#app'), KEY='launchforge.projects.v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let draft=null, aiConfigured=false, aiStatus='checking', aiBusy=false;
-const apiBase=()=>(localStorage.getItem('launchforge.apiBase')||window.LAUNCHFORGE_API_BASE||(location.protocol==='file:'?'http:'+'//localhost:3000':(/^(localhost|127\.0\.0\.1)$/.test(location.hostname)?'':'https:'+'//launchforge-4a6u.onrender.com'))).replace(/\/+$/,'');
+const apiBase=()=>(localStorage.getItem('launchforge.apiBase')||window.LAUNCHFORGE_API_BASE||(location.protocol==='file:'?'http:'+'//localhost:3000':(/^(localhost|127\.0\.0\.1)$/.test(location.hostname)?'':(location.hostname.endsWith('.onrender.com')?'':'https:'+'//launchforge-4a6u.onrender.com')))).replace(/\/+$/,'');
 const NAVJS='<script>document.addEventListener("click",function(ev){var a=ev.target.closest&&ev.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";ev.preventDefault();if(h.charAt(0)==="#"){var el=document.getElementById(h.slice(1));if(el)el.scrollIntoView({behavior:"smooth",block:"start"})}});<\/script>';
 addEventListener('beforeunload',e=>{if((draft&&!draft.saved)||[saver,lastSaver].some(x=>x&&x.isPending())){e.preventDefault();e.returnValue=''}});
 /* ---------- storage (browser localStorage prototype) ---------- */
@@ -83,45 +122,147 @@ function toast(m){const t=$('#toast');t.innerHTML='<div class="toast">'+esc(m)+'
 const fmt=t=>t?new Date(t).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'-';
 /* ---------- server storage (backend + Neon Postgres) ---------- */
 const OKEY='launchforge.owner.v1';
-let memTok=null,saver=null,lastSaver=null;
+let saver=null,lastSaver=null;
+const auth={state:'unknown',user:null,csrf:null,next:null,reason:''};   // state: unknown | in | out
+const uk=k=>(auth.user?auth.user.id:'anon')+':'+k;   // recovery copies are kept per account
 const srv={state:'unknown',msg:'',at:0}; // state: unknown | ready | unconfigured | down
 const ISUUID=s=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
-function newTok(){const b=new Uint8Array(32);crypto.getRandomValues(b);return btoa(String.fromCharCode.apply(null,b)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
-// Stage 1 anonymous owner token: identifies this browser to the server. It is NOT a login.
-function ownerToken(){try{let t=localStorage.getItem(OKEY);if(!t||!/^[A-Za-z0-9_-]{32,128}$/.test(t)){t=newTok();localStorage.setItem(OKEY,t)}return t}catch(e){return memTok||(memTok=newTok())}}
-async function api(method,path,body,timeout){
+// Pre-accounts token (Stage 1). Never created any more; read only so old projects can be claimed after login.
+function legacyToken(){try{const t=localStorage.getItem(OKEY);return /^[A-Za-z0-9_-]{32,128}$/.test(t||'')?t:null}catch(e){return null}}
+/* XSITE-START */
+// True when the API is on a different origin than this page (cookies are then "third-party": Safari and others block them).
+function isCrossSite(base,here){try{return !!base&&new URL(base,here).origin!==new URL(here).origin}catch(e){return false}}
+/* XSITE-END */
+async function apiRaw(method,path,body,timeout){
  const c=new AbortController(),t=setTimeout(()=>c.abort(),timeout||20000);
  try{
-  const r=await fetch(apiBase()+path,{method,headers:Object.assign({'Authorization':'Bearer '+ownerToken()},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined,signal:c.signal});
+  const r=await fetch(apiBase()+path,{method,credentials:'include',headers:Object.assign(method!=='GET'&&auth.csrf?{'X-CSRF-Token':auth.csrf}:{},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined,signal:c.signal});
   let j=null;if(r.status!==204){try{j=await r.json()}catch(e){}}
   if(!r.ok){const e=new Error((j&&j.error&&j.error.message)||'Server error ('+r.status+')');e.status=r.status;e.code=j&&j.error&&j.error.code;e.data=j;e.fatal=r.status>=400&&r.status<500&&r.status!==408&&r.status!==429;throw e}
   return j;
  }catch(e){if(e.status)throw e;const n=new Error(e.name==='AbortError'?'The server took too long to respond (it may be waking up).':'Could not reach the server.');n.network=true;throw n}
  finally{clearTimeout(t)}}
+function markOut(){auth.state='out';auth.user=null;auth.csrf=null;if(/^#\/(project|new)/.test(location.hash))auth.next=location.hash;renderAuthNav()}
+// Every call sends the session cookie (credentials) and the CSRF token. An expired session is reported, never hidden.
+let csrfRetry=false;
+async function api(method,path,body,timeout){
+ try{return await apiRaw(method,path,body,timeout)}
+ catch(e){
+  if(e.status===403&&e.code==='CSRF_INVALID'&&!csrfRetry){csrfRetry=true;try{await checkAuth(true);if(auth.state==='in')return await apiRaw(method,path,body,timeout)}finally{csrfRetry=false}}
+  if(e.status===401&&e.code==='AUTH_REQUIRED'){markOut();auth.reason='Your session expired. Log in again.';e.auth=true;e.message='Your session expired. Log in again.'}
+  throw e}}
+async function checkAuth(force){
+ if(!force&&auth.state!=='unknown')return;
+ try{const j=await apiRaw('GET','/api/auth/me');if(j&&j.user){auth.state='in';auth.user=j.user;auth.csrf=j.csrf}else markOut()}
+ catch(e){auth.state='out';auth.user=null;auth.csrf=null}
+ renderAuthNav()}
+function renderAuthNav(){const el=$('#authnav');if(!el)return;
+ el.innerHTML=auth.state==='in'?'<span class="note hide">'+esc(auth.user.email)+'</span><button class="btn ghost sm" data-logout>Log out</button>':(srv.state==='down'||srv.state==='unconfigured'?'':'<a href="#/login" style="color:var(--mute)">Log in</a><a class="btn ghost sm" href="#/register">Sign up</a>')}
+async function doLogout(){
+ if(saver&&saver.isPending()&&!confirm('Some changes are not saved yet. Log out anyway? They stay in a recovery copy in this browser until you log in again.'))return;
+ try{await api('POST','/api/auth/logout',{})}catch(e){if(!e.auth){toast('Could not log out: '+e.message);return}}
+ markOut();draft=null;rows=[];auth.next=null;auth.reason='';toast('Logged out');location.hash='#/'}
+async function authRoute(m){await checkServer();if(auth.state==='in'){location.hash=auth.next||'#/dashboard';return}authPage(m)}
+/* AUTHUI-START */
+// Pure helpers for the sign-in page (unit-tested in Node).
+const OAUTH_MSG={cancelled:'Sign-in was cancelled. You can try again, or use your email and password.',state:'That sign-in attempt expired or was interrupted. Please try again.',provider_error:'The provider could not complete the sign-in. Please try again in a moment.',no_verified_email:'The provider did not share a verified email address, so no account could be created.',account_exists:'An account with this email already exists. Log in with your email and password.',not_configured:'That sign-in method is not set up on this server.',needs_upgrade:'Social sign-in is waiting for a database upgrade on this server.',rate_limit:'Too many attempts. Wait a few minutes and try again.',failed:'Sign-in failed. Please try again.'};
+function oauthMessage(code){return code?(OAUTH_MSG[code]||OAUTH_MSG.failed):''}
+const PROVIDER_LABEL={google:'Google',github:'GitHub',apple:'Apple'};
+// What one social button looks like. info: undefined = still checking, null = could not ask, or {available, reason} from the server.
+function providerView(name,info,serverOff){
+ const L=PROVIDER_LABEL[name]||name;
+ if(serverOff)return{disabled:true,note:'Unavailable',msg:'The server is not reachable right now, so '+L+' sign-in is unavailable.'};
+ if(info===undefined)return{disabled:true,note:'Checking…',msg:''};
+ if(info===null||typeof info!=='object')return{disabled:true,note:'Unavailable',msg:L+' sign-in is unavailable right now. Use your email and password instead.'};
+ if(info.available===true)return{disabled:false,note:'',msg:''};
+ if(info.reason==='needs_database_upgrade')return{disabled:true,note:'Not available yet',msg:L+' sign-in is waiting for a database upgrade on this server. Use your email and password for now.'};
+ return{disabled:true,note:'Not configured',msg:L+' sign-in is not set up on this server yet. Use your email and password instead.'}}
+function emailProblem(v){v=String(v||'').trim();if(!v)return'Enter your email address.';return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)?'':'Enter a valid email address.'}
+function passwordProblem(v,reg){v=String(v||'');if(!v)return reg?'Choose a password.':'Enter your password.';if(reg&&v.length<10)return'Use at least 10 characters.';if(v.length>128)return'Use at most 128 characters.';return''}
+/* AUTHUI-END */
+const AU_G='<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
+const AU_GH='<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>';
+const AU_AP='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>';
+const AU_ICON={google:AU_G,github:AU_GH,apple:AU_AP};
+const AU_EYE='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const AU_EYE_OFF='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19c-6.4 0-10-7-10-7a18.5 18.5 0 0 1 5.06-5.94M9.9 5.1A10.9 10.9 0 0 1 12 5c6.4 0 10 7 10 7a18.5 18.5 0 0 1-2.16 3.19M1 1l22 22"/></svg>';
+const AU_OK='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>';
+function socialHtml(provs,off){return['google','github','apple'].map(n=>{const v=providerView(n,provs&&provs[n],off);const L=PROVIDER_LABEL[n];
+ return '<button type="button" class="au-sb '+n+'" data-p="'+n+'"'+(v.disabled?' aria-disabled="true"':'')+'>'+AU_ICON[n]+'<span class="t">Continue with '+L+'</span>'+(v.note?'<small>'+esc(v.note)+'</small>':'')+'</button>'}).join('')}
+function authPage(mode){const reg=mode==='register';const off=srv.state!=='ready';
+ const oerr=new URLSearchParams((location.hash.split('?')[1])||'').get('oauth_error');
+ if(oerr)history.replaceState(null,'',location.pathname+location.search+'#/'+(reg?'register':'login'));
+ const st=off?(srv.state==='unconfigured'?'Accounts are not available: server storage is not configured.':'The server is not reachable right now ('+esc(srv.msg||'try again soon')+'). Local-only projects still work from the dashboard.'):esc(auth.reason||'');
+ app.innerHTML=`<div class="au"><aside class="au-side"><h2>From idea to online business.</h2><p>Tell LaunchForge about your business and get a website you can keep improving.</p><ul class="au-pts"><li>${AU_OK}<span>Generate a website from your business details</span></li><li>${AU_OK}<span>Refine it with AI edits written in plain English</span></li><li>${AU_OK}<span>Projects are saved to your account, ready when you return</span></li></ul></aside>
+<div class="au-main"><div class="au-card"><nav class="au-tabs" aria-label="Account"><a href="#/login"${reg?'':' aria-current="page"'}>Sign in</a><a href="#/register"${reg?' aria-current="page"':''}>Create account</a></nav>
+<h1>${reg?'Create your account':'Welcome back'}</h1><p class="au-sub">${reg?'Start building your website in minutes.':'Sign in to open your projects.'}</p>
+${st?`<p class="au-status${off?' warn':''}" role="status">${st}</p>`:''}
+${isCrossSite(apiBase(),location.href)?`<p class="au-status" role="note">Signing in with email from this address relies on cross-site cookies, which Safari and some other browsers block. For reliable login use <a href="${esc(apiBase())}/" style="text-decoration:underline">${esc(apiBase().replace(/^https?:\/\//,''))}</a>.</p>`:''}
+<div class="au-social" id="au_social">${socialHtml(undefined,off)}</div><p class="${oerr?'au-alert':'au-hint'}" id="au_social_msg" role="${oerr?'alert':'status'}" aria-live="polite">${esc(oauthMessage(oerr))}</p>
+<div class="au-or" role="separator"><span>or continue with email</span></div>
+<form id="auth_form" novalidate><div class="au-alert" id="auth_err" role="alert"></div>
+<div class="au-field"><label for="em">Email</label><div class="au-in"><input id="em" type="email" inputmode="email" autocomplete="${reg?'email':'username'}" autocapitalize="none" spellcheck="false" maxlength="254" placeholder="you@company.com" aria-describedby="em_e"></div><div class="au-fe" id="em_e"></div></div>
+<div class="au-field"><label for="pw">Password</label><div class="au-in"><input class="pw" id="pw" type="password" autocomplete="${reg?'new-password':'current-password'}" maxlength="128" placeholder="${reg?'At least 10 characters':'Your password'}" aria-describedby="pw_e${reg?' pw_h':''}"><button type="button" class="au-eye" id="pw_eye" aria-label="Show password" aria-pressed="false">${AU_EYE}</button></div><div class="au-fe" id="pw_e"></div>${reg?'<div class="au-hint" id="pw_h">Use at least 10 characters.</div>':''}</div>
+<button class="btn au-submit" id="auth_go" type="submit"${off?' disabled':''}>${reg?'Create account':'Sign in'}</button></form>
+<p class="au-legal">By continuing you agree to the <a href="#/terms">Terms</a> and <a href="#/privacy">Privacy Policy</a>.</p></div></div></div>`;
+ const label=reg?'Create account':'Sign in';
+ const busy=(on,t)=>{const b=$('#auth_go');if(!b)return;b.disabled=on||off;b.setAttribute('aria-busy',on?'true':'false');b.innerHTML=on?'<span class="au-spin" aria-hidden="true"></span><span>'+t+'</span>':label};
+ const mark=(id,msg)=>{const i=$(id),e=$(id+'_e');if(!i)return;i.setAttribute('aria-invalid',msg?'true':'false');e.textContent=msg||''};
+ // Social buttons: reflect what the server really offers; a click on an unavailable one explains why instead of doing nothing.
+ let provs;const sm=$('#au_social_msg');
+ const paint=()=>{const c=$('#au_social');if(c)c.innerHTML=socialHtml(provs,off)};
+ $('#au_social').onclick=e=>{const b=e.target.closest('.au-sb');if(!b)return;const n=b.dataset.p,v=providerView(n,provs&&provs[n],off);
+  if(v.disabled){sm.textContent=v.msg;return}
+  sm.textContent='';b.setAttribute('aria-disabled','true');b.querySelector('.t').textContent='Redirecting to '+PROVIDER_LABEL[n]+'…';
+  location.assign(apiBase()+'/api/auth/oauth/'+n+'/start')};
+ if(!off)apiRaw('GET','/api/auth/providers',null,8000).then(j=>{provs=j},()=>{provs=null}).then(()=>{if($('#au_social')&&location.hash.startsWith('#/'+(reg?'register':'login')))paint()});
+ // Returning with the browser's Back button can restore this page frozen in its "Redirecting…" state.
+ addEventListener('pageshow',ev=>{if(ev.persisted&&/^#\/(login|register)/.test(location.hash))authPage(mode)},{once:true});
+ $('#pw_eye').onclick=()=>{const p=$('#pw'),show=p.type==='password';p.type=show?'text':'password';const b=$('#pw_eye');b.setAttribute('aria-pressed',show?'true':'false');b.setAttribute('aria-label',show?'Hide password':'Show password');b.innerHTML=show?AU_EYE_OFF:AU_EYE;p.focus()};
+ $('#em').addEventListener('blur',()=>{if($('#em').value)mark('#em',emailProblem($('#em').value))});
+ $('#em').addEventListener('input',()=>{if($('#em').getAttribute('aria-invalid')==='true')mark('#em',emailProblem($('#em').value))});
+ $('#pw').addEventListener('input',()=>{if($('#pw').getAttribute('aria-invalid')==='true')mark('#pw',passwordProblem($('#pw').value,reg))});
+ const go=async()=>{const em=$('#em').value.trim(),pw=$('#pw').value,err=$('#auth_err');err.textContent='';
+  const pe1=emailProblem(em),pe2=passwordProblem(pw,reg);mark('#em',pe1);mark('#pw',pe2);if(pe1||pe2){(pe1?$('#em'):$('#pw')).focus();return}
+  busy(true,reg?'Creating account…':'Signing in…');
+  try{const j=await apiRaw('POST','/api/auth/'+(reg?'register':'login'),{email:em,password:pw});let ok=null;try{ok=await apiRaw('GET','/api/auth/me')}catch(x){}
+  if(!ok||!ok.user){$('#pw').value='';err.textContent=(reg?'Your account was created, but ':'')+'your browser did not keep the login session. This usually means it blocks cookies from another site (common in Safari). Open LaunchForge at '+apiBase()+'/ and log in there.';busy(false);return}
+  $('#pw').value='';auth.state='in';auth.user=j.user;auth.csrf=j.csrf;auth.reason='';renderAuthNav();const t=auth.next||'#/dashboard';auth.next=null;location.hash=t}
+  catch(e){err.textContent=e.message;busy(false)}};
+ $('#auth_form').addEventListener('submit',e=>{e.preventDefault();go()});
+ (oerr?$('#au_social_msg'):$('#em')).focus&&$('#em').focus()}
+async function legacyBanner(){const t=legacyToken();if(!t||auth.state!=='in'||srv.state!=='ready')return;
+ try{const j=await api('POST','/api/auth/legacy/preview',{token:t});const b=$('#dban');if(!b||!j.count)return;
+  b.insertAdjacentHTML('beforeend','<div class="msg"><b>'+j.count+' project'+(j.count>1?'s':'')+' from before accounts</b> ('+esc(j.projects.map(p=>p.name).join(', '))+') '+(j.count>1?'were':'was')+' found for this browser. <button class="btn sm" data-claim>Add to my account</button><div class="note" style="margin-top:6px">Only do this if they are your projects. They will belong to '+esc(auth.user.email)+'.</div></div>')}catch(e){}}
+async function doClaim(){const t=legacyToken();if(!t)return;
+ try{const j=await api('POST','/api/auth/legacy/claim',{token:t});try{localStorage.removeItem(OKEY)}catch(e){}toast(j.claimed+' project'+(j.claimed===1?'':'s')+' added to your account');await loadRows()}
+ catch(e){toast('Could not add them: '+e.message)}}
 async function checkServer(force){
  if(!force&&srv.state==='ready')return;
  if(!force&&srv.state!=='unknown'&&Date.now()-srv.at<10000)return;
  srv.at=Date.now();
  try{const c=new AbortController(),t=setTimeout(()=>c.abort(),20000);const r=await fetch(apiBase()+'/api/health',{signal:c.signal});clearTimeout(t);const j=await r.json();const d=j&&j.database;
-  srv.state=d==='connected'?'ready':d==='unavailable'?'down':'unconfigured';srv.msg=d==='unavailable'?'the database is not reachable':''}
- catch(e){srv.state='down';srv.msg='the backend is not reachable (it may be waking up)'}}
+  srv.state=d==='connected'?'ready':(d==='unavailable'||d==='needs_migration')?'down':'unconfigured';srv.msg=d==='unavailable'?'the database is not reachable':d==='needs_migration'?'a database update is pending':''}
+ catch(e){srv.state='down';srv.msg='the backend is not reachable (it may be waking up)'}
+ if(srv.state==='ready')await checkAuth(force)}
 /* LOCALSTORE-START */
 const RKEY='launchforge.recovery.v1', IKEY='launchforge.imported.v1';
 function jget(k,d){try{const v=JSON.parse(localStorage.getItem(k));return v&&typeof v==='object'&&!Array.isArray(v)?v:d}catch(e){return d}}
 function jset(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}
-const importedMap=()=>jget(IKEY,{});
+const importedMap=uid=>{const m=jget(IKEY,{})[uid];return m&&typeof m==='object'&&!Array.isArray(m)?m:{}};
+function setImported(uid,map){const all=jget(IKEY,{});all[uid]=map;return jset(IKEY,all)}
 function recoveryRead(key){const e=jget(RKEY,{})[key];return e&&typeof e==='object'&&e.payload?e:null}
 function recoveryWrite(key,val){const r=jget(RKEY,{});r[key]=val;return jset(RKEY,r)}
 function recoveryClear(key){const r=jget(RKEY,{});if(key in r){delete r[key];jset(RKEY,r)}}
 function sameContent(a,b){return['name','type','desc','audience','style','html'].every(k=>(a[k]||'')===(b[k]||''))&&JSON.stringify(a.pages||[])===JSON.stringify(b.pages||[])}
 function importItem(p){return{localId:p.id,name:p.name,type:p.type,desc:p.desc,audience:p.audience,style:p.style,pages:p.pages,html:p.html||'',mode:p.mode||null,generatedAt:p.generatedAt||null,created:p.created||null,history:Array.isArray(p.history)?p.history.slice(-5):[]}}
 // Copies local projects to the server. Never changes or deletes local data. post(item) -> {status,id,message}.
-async function runImport(items,post){
- const map=importedMap(),ok=[],bad=[];
+async function runImport(items,post,uid){
+ const map=importedMap(uid),ok=[],bad=[];
  for(const p of items){
   if(map[p.id])continue;
   try{const r=await post(importItem(p));
-   if(r&&(r.status==='imported'||r.status==='exists')){map[p.id]=r.id;jset(IKEY,map);ok.push(p.id)}
+   if(r&&(r.status==='imported'||r.status==='exists')){map[p.id]=r.id;setImported(uid,map);ok.push(p.id)}
    else bad.push({id:p.id,name:p.name,message:(r&&r.message)||'not imported'})}
   catch(e){bad.push({id:p.id,name:p.name,message:e.message});if(e.network||e.status>=500||e.status===429)break}}
  return{ok,bad}}
@@ -151,7 +292,7 @@ function createSaver(o){
  return{touch,flush,state:()=>state,error:()=>lastErr,isPending:()=>dirty||running||state==='failed'||state==='conflict'}}
 /* SAVER-END */
 function makeSnap(){if($('#n'))read();return{me:cur,name:cur.name,type:cur.type,desc:cur.desc,audience:cur.audience,style:cur.style,pages:cur.pages.slice(),html:draft?draft.html:(cur.html||''),mode:draft?draft.mode:(cur.mode||null),generatedAt:draft?draft.at:(cur.generatedAt||null),history:(cur.history||[]).slice(-5)}}
-function touchSave(){if(!saver)return;const s=makeSnap();const payload=Object.assign({},s);delete payload.me;recoveryWrite(s.me.id||'new',{payload,baseVersion:s.me.version||0,at:Date.now()});saver.touch(s)}
+function touchSave(){if(!saver)return;const s=makeSnap();const payload=Object.assign({},s);delete payload.me;recoveryWrite(uk(s.me.id||'new'),{payload,baseVersion:s.me.version||0,at:Date.now()});saver.touch(s)}
 async function pushServer(snap){
  const me=snap.me;
  const body={name:snap.name,type:snap.type,desc:snap.desc,audience:snap.audience,style:snap.style,pages:snap.pages,html:snap.html,mode:snap.mode,generatedAt:snap.generatedAt,history:snap.history};
@@ -168,7 +309,7 @@ function initSaver(){
  saver=null;if(cur.src!=='server')return;
  const me=cur,wasNew=!me.id;
  const s=createSaver({save:pushServer,onState:st=>{
-  if(st==='saved'){if(wasNew)recoveryClear('new');if(me.id)recoveryClear(me.id)}
+  if(st==='saved'){if(wasNew)recoveryClear(uk('new'));if(me.id)recoveryClear(uk(me.id))}
   if(saver===s)saveBadge()}});
  saver=s}
 function saveBadge(){const el=$('#savest');if(!el)return;
@@ -176,14 +317,14 @@ function saveBadge(){const el=$('#savest');if(!el)return;
  const st=saver.state(),e=saver.error(),M={saved:['ok','Saved to server'],dirty:['warn','Unsaved changes…'],saving:['','Saving…'],failed:['warn',''],conflict:['warn','']};
  el.className='badge '+M[st][0];el.textContent=M[st][1];el.title='';
  const btn=(a,t)=>{const b=document.createElement('button');b.className='btn ghost sm';b.setAttribute(a,'1');b.textContent=t;return b};
- if(st==='failed'){el.textContent='Save failed: '+((e&&e.message)||'error')+'. Your changes are kept in this browser. ';el.append(btn('data-retry-save','Retry now'))}
+ if(st==='failed'){el.textContent='Save failed: '+((e&&e.message)||'error')+'. Your changes are kept in this browser. ';el.append(btn('data-retry-save','Retry now'));if(e&&e.auth){const a=document.createElement('a');a.href='#/login';a.className='btn sm';a.textContent='Log in';el.append(' ',a)}}
  if(st==='conflict'){el.textContent='Save paused: version conflict. ';el.append(btn('data-resolve','Resolve'))}}
 function showConflict(){const e=saver&&saver.error(),cp=e&&e.current,me=cur;
  modal('<h3>This project changed on the server</h3><p class="note">It was updated'+(cp?' (version '+cp.version+', '+esc(new Date(cp.updated).toLocaleString())+')':'')+' after you opened it. Nothing has been overwritten. Choose what to do:</p><div style="display:grid;gap:8px;margin-top:12px"><button class="btn sm" id="cf_keep">Keep my version (replace the server copy)</button><button class="btn ghost sm" id="cf_srv">Load the server version (discard my unsaved changes)</button><button class="btn ghost sm" id="cf_dl">Download my version as HTML</button><button class="btn ghost sm" data-x>Decide later</button></div>');
  $('#cf_keep').onclick=()=>{closeM();if(cp)me.version=cp.version;saver.flush()};
- $('#cf_srv').onclick=()=>{closeM();recoveryClear(me.id);if(cp)studioRender(me.id,Object.assign({},cp,{src:'server'}));else location.reload()};
+ $('#cf_srv').onclick=()=>{closeM();recoveryClear(uk(me.id));if(cp)studioRender(me.id,Object.assign({},cp,{src:'server'}));else location.reload()};
  $('#cf_dl').onclick=exportHtml}
-function recoveryPrompt(){const key=cur.id||'new',rc=recoveryRead(key);if(!rc)return;
+function recoveryPrompt(){const key=uk(cur.id||'new'),rc=recoveryRead(key);if(!rc)return;
  if(cur.id&&sameContent(rc.payload,cur)&&rc.baseVersion===cur.version){recoveryClear(key);return}
  if(!cur.id&&!rc.payload.name&&!rc.payload.html){recoveryClear(key);return}
  const stale=cur.id&&rc.baseVersion!==cur.version;
@@ -242,8 +383,8 @@ er.className='e ok';er.textContent='Thanks! (Demo only: nothing was sent.)';f.re
 <\/script></body></html>`}
 /* ---------- router ---------- */
 const R={};
-function route(){if(saver&&saver.isPending()){saver.flush();lastSaver=saver}saver=null;const h=location.hash.replace(/^#\/?/,'')||'';const [a,b]=h.split('/');scrollTo(0,0);
- if(a===''){draft=null;return landing()}if(a==='dashboard')return dash();if(a==='new')return studio(null);if(a==='project')return studio(b);
+function route(){if(saver&&saver.isPending()){saver.flush();lastSaver=saver}saver=null;const h=location.hash.replace(/^#\/?/,'')||'';const [a,b]=h.split('?')[0].split('/');scrollTo(0,0);
+ if(a===''){draft=null;return landing()}if(a==='login'||a==='register')return authRoute(a);if(a==='dashboard')return dash();if(a==='new')return studio(null);if(a==='project')return studio(b);
  if(['about','contact','privacy','terms'].includes(a))return page(a);landing()}
 addEventListener('hashchange',route);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-s]');if(b){const go=()=>{const el=document.getElementById(b.dataset.s);el&&el.scrollIntoView({behavior:'smooth'})};if(location.hash&&location.hash!=='#/'){location.hash='#/';setTimeout(go,60)}else go()}});
@@ -254,7 +395,7 @@ function landing(){app.innerHTML=`<div class="wrap"><div class="hero"><h1>Your i
 <div class="card"><h3>Describe, don't design</h3><p>Answer six questions about your business and get a full site.</p></div>
 <div class="card"><h3>Look that fits</h3><p>Cafés, consultants, gyms, restaurants and portfolios each get a different layout and palette.</p></div>
 <div class="card"><h3>Safe live preview</h3><p>Sites render in a sandboxed frame, at desktop and mobile widths.</p></div>
-<div class="card"><h3>Projects that stick</h3><p>Projects autosave to the server when it is available, with a clearly labeled local fallback in your browser.</p></div>
+<div class="card"><h3>Projects that stick</h3><p>Log in and your projects autosave to your account, with a clearly labeled local fallback in your browser if the server is unavailable.</p></div>
 <div class="card"><h3>Export</h3><p>Download the finished site as a single HTML file.</p></div>
 <div class="card"><h3>Deploy (needs setup)</h3><p>Hosting integration requires provider credentials. Setup steps are inside every project.</p></div></div></section>
 <section class="s"><h2>How it works</h2><p class="sub">Three steps.</p><div class="grid3"><div class="card"><h3>1. Describe</h3><p>Tell us about your business and audience.</p></div><div class="card"><h3>2. Generate</h3><p>Pick a style and the pages you want.</p></div><div class="card"><h3>3. Save and export</h3><p>Review the preview, then save or download it.</p></div></div></section>
@@ -264,13 +405,13 @@ function landing(){app.innerHTML=`<div class="wrap"><div class="hero"><h1>Your i
 <div class="card plan"><h3>Business</h3><div class="price">TBD</div><ul><li>Higher usage limits</li><li>Advanced project management</li><li>Additional integrations where available</li></ul><button class="btn ghost" disabled>Payments not configured</button></div></div></section>
 <section class="s" id="faq"><h2>FAQ</h2><div style="max-width:760px">
 <details><summary>Is this using real AI?</summary><p>Not in this build. It runs in demonstration mode with predefined templates filled in with your answers. AI generation needs a server-side model API key, which is not set up here.</p></details>
-<details><summary>Where are my projects stored?</summary><p>When server storage is available, projects are saved to a database and tied to an anonymous token kept in this browser (there are no accounts yet). If the server is unavailable, the app falls back to this browser's local storage and labels those projects "Local only". Clearing site data removes the token and local copies.</p></details>
+<details><summary>Where are my projects stored?</summary><p>When you are logged in and server storage is available, projects are saved to a database and belong to your account. If you are logged out or the server is unavailable, the app falls back to this browser's local storage and labels those projects "Local only". Clearing site data removes local copies.</p></details>
 <details><summary>Can I publish my site?</summary><p>You can download it. One-click deployment needs hosting credentials and is not connected.</p></details>
 <details><summary>Can I pay for a plan?</summary><p>No. Plans are proposals and no payment provider is configured.</p></details></div></section></div>`}
 /* ---------- static pages ---------- */
 function page(k){const c={about:['About LaunchForge','LaunchForge helps freelancers, small businesses and first-time founders get a professional website from a plain-English description. This build is a working prototype: template-based generation, local project storage, sandboxed preview and HTML export.'],
 contact:['Contact','Placeholder details (not real): hello@launchforge.example. No contact form backend exists in this prototype, so please do not rely on this address.'],
-privacy:['Privacy','Prototype notice: projects are saved on the LaunchForge server (a Postgres database) under an anonymous token kept in your browser, or only in your browser if the server is unavailable. There are no accounts yet, so anyone who obtains your token could read your projects: do not store sensitive information. AI edits send your website HTML and instruction to Google Gemini. A full privacy policy is required before any production launch.'],
+privacy:['Privacy','Prototype notice: accounts use an email address and a password (stored only as a salted Argon2id hash). Projects are saved on the LaunchForge server (a Postgres database) under your account, or only in your browser if you are logged out or the server is unavailable. AI edits send your website HTML and instruction to Google Gemini. A full privacy policy is required before any production launch.'],
 terms:['Terms','Prototype notice: this software is provided as-is for evaluation. Formal terms of service must be written before any production launch.']}[k];
 app.innerHTML=`<div class="wrap" style="max-width:760px;padding-top:64px;padding-bottom:64px"><h1>${c[0]}</h1><p style="color:var(--mute)">${c[1]}</p><a class="btn" href="#/">Back to home</a></div>`}
 /* ---------- dashboard ---------- */
@@ -283,22 +424,22 @@ async function dash(){draft=null;
  await loadRows()}
 async function loadRows(){
  let corrupt=false;try{const raw=localStorage.getItem(KEY);if(raw)JSON.parse(raw)}catch(e){corrupt=true}
- const map=importedMap();
- const loc=load().filter(p=>!map[p.id]);
  await checkServer();
+ const map=importedMap(auth.user&&auth.user.id);
+ const loc=load().filter(p=>!map[p.id]);
  let sr=[];
- if(srv.state==='ready'){try{sr=(await api('GET','/api/projects')).projects.map(p=>Object.assign({},p,{src:'server'}))}catch(e){srv.state='down';srv.msg=e.message}}
+ if(srv.state==='ready'&&auth.state==='in'){try{sr=(await api('GET','/api/projects')).projects.map(p=>Object.assign({},p,{src:'server'}))}catch(e){if(!e.auth){srv.state='down';srv.msg=e.message}}}
  if(!$('#dnote'))return;
  rows=sr.concat(loc.map(p=>({id:p.id,name:p.name,type:p.type,created:p.created,hasHtml:!!p.html,src:'local'})));
- const N={ready:'Server storage is connected. Server-saved projects are tied to an anonymous token kept in this browser (no accounts yet).',
+ const N={ready:'Server storage is connected. Server-saved projects belong to your account.',
   unconfigured:'Server storage is not configured. Projects are saved in this browser only.',
   down:'Server storage is unavailable ('+esc(srv.msg)+'). Local-only projects below still work; server-saved projects will return when it reconnects. <button class="btn ghost sm" data-retry>Retry</button>'}[srv.state];
- $('#dnote').innerHTML=N;
+ $('#dnote').innerHTML=(srv.state==='ready'&&auth.state!=='in')?'<b>You are not logged in.</b> Server-saved projects need an account. <a class="btn sm" href="#/login">Log in</a> <a class="btn ghost sm" href="#/register">Sign up</a>':N;
  let h='';
  if(corrupt)h+='<div class="msg err">Some saved data in this browser could not be read. Nothing was changed. <button class="btn ghost sm" data-bak>Download raw backup</button></div>';
- if(srv.state==='ready'&&loc.length)h+=`<div class="msg">${loc.length} project${loc.length>1?'s are':' is'} saved only in this browser. <button class="btn sm" data-imp>Import to server</button> <button class="btn ghost sm" data-bak>Download backup</button><div class="note" style="margin-top:6px">Importing copies them to the server. Your local copies are kept and nothing already on the server is overwritten.</div></div>`;
+ if(srv.state==='ready'&&auth.state==='in'&&loc.length)h+=`<div class="msg">${loc.length} project${loc.length>1?'s are':' is'} saved only in this browser. <button class="btn sm" data-imp>Import to my account</button> <button class="btn ghost sm" data-bak>Download backup</button><div class="note" style="margin-top:6px">Importing copies them to the server. Your local copies are kept and nothing already on the server is overwritten.</div></div>`;
  else if(loc.length)h+='<div class="msg">'+loc.length+' local-only project'+(loc.length>1?'s':'')+' in this browser. <button class="btn ghost sm" data-bak>Download backup</button></div>';
- $('#dban').innerHTML=h;list()}
+ $('#dban').innerHTML=h;list();legacyBanner()}
 function list(){const el=$('#list');if(!el)return;
  const L=rows.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())&&(flt==='all'||(flt==='saved')===!!p.hasHtml));
  if(!rows.length){el.innerHTML=srv.state==='down'?'<div class="empty"><h3 style="color:var(--text)">Server projects can\'t be loaded right now</h3><p>You can still create a project; it will be saved in this browser only until the server is back.</p><a class="btn" href="#/new">Create a project</a></div>':'<div class="empty"><h3 style="color:var(--text)">No projects yet</h3><p>Describe your business to create your first website.</p><a class="btn" href="#/new">Create a project</a></div>';return}
@@ -307,9 +448,9 @@ function list(){const el=$('#list');if(!el)return;
 function downloadBackup(){const raw=k=>{try{return localStorage.getItem(k)}catch(e){return null}};
  const data={app:'LaunchForge',exportedAt:new Date().toISOString(),note:'Raw browser data. LaunchForge deleted nothing. The anonymous owner token is intentionally not included.',localProjects:raw(KEY),legacyLocalProjects:raw('launchforge-projects'),recoveryCopies:raw(RKEY),importedMap:raw(IKEY)};
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download='launchforge-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove()}
-async function doImport(){const items=load().filter(p=>!importedMap()[p.id]);if(!items.length)return;
+async function doImport(){if(auth.state!=='in')return;const uid=auth.user.id;const items=load().filter(p=>!importedMap(uid)[p.id]);if(!items.length)return;
  const b=document.querySelector('[data-imp]');if(b){b.disabled=true;b.textContent='Importing…'}
- const res=await runImport(items,item=>api('POST','/api/projects/import',{projects:[item]},40000).then(r=>r.results[0]));
+ const res=await runImport(items,item=>api('POST','/api/projects/import',{projects:[item]},40000).then(r=>r.results[0]),uid);
  modal('<h3>Import finished</h3><p>'+res.ok.length+' project'+(res.ok.length===1?'':'s')+' copied to the server.</p>'+(res.bad.length?'<p class="err">Not imported:</p><ul class="note">'+res.bad.map(x=>'<li>'+esc(x.name||x.id)+': '+esc(x.message)+'</li>').join('')+'</ul>':'')+'<p class="note">Your local copies were not changed or deleted.'+(res.bad.length?' You can retry the import, or download a backup first.':'')+'</p><div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px"><button class="btn ghost sm" data-bak>Download backup</button><button class="btn sm" data-x>Close</button></div>');
  await loadRows()}
 document.addEventListener('click',e=>{const r=e.target.closest('[data-ren]'),d=e.target.closest('[data-del]');
@@ -318,9 +459,11 @@ document.addEventListener('click',e=>{const r=e.target.closest('[data-ren]'),d=e
    try{if(p.src==='server')await api('PATCH','/api/projects/'+p.id,{name:v});else{const l=load(),x=l.find(y=>y.id===p.id);if(!x)throw new Error('Project not found.');x.name=v;if(!save(l))throw new Error('Could not write to browser storage.')}
     closeM();await loadRows();toast('Renamed')}catch(err){$('#re').textContent=err.message}}}
  if(d){const p=rows.find(x=>x.id===d.dataset.del);if(!p)return;modal(`<h3>Delete "${esc(p.name)}"?</h3><p class="note">${p.src==='server'?'This permanently deletes the project from the server.':'This removes the project from this browser only.'}</p><p class="err" id="de"></p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn ghost sm" data-x>Cancel</button><button class="btn danger sm" id="dok">Delete project</button></div>`);
-  $('#dok').onclick=async()=>{try{if(p.src==='server'){await api('DELETE','/api/projects/'+p.id);recoveryClear(p.id)}else{if(!save(load().filter(x=>x.id!==p.id)))throw new Error('Could not write to browser storage.')}
+  $('#dok').onclick=async()=>{try{if(p.src==='server'){await api('DELETE','/api/projects/'+p.id);recoveryClear(uk(p.id))}else{if(!save(load().filter(x=>x.id!==p.id)))throw new Error('Could not write to browser storage.')}
     closeM();await loadRows();toast('Deleted')}catch(err){$('#de').textContent=err.message}}}
  if(e.target.closest('[data-imp]'))doImport();
+ if(e.target.closest('[data-claim]'))doClaim();
+ if(e.target.closest('[data-logout]'))doLogout();
  if(e.target.closest('[data-bak]'))downloadBackup();
  if(e.target.closest('[data-retry]'))checkServer(true).then(loadRows);
  if(e.target.closest('[data-retry-save]')&&saver)saver.flush();
@@ -333,15 +476,18 @@ let cur=null, mobile=false;
 async function studio(id){
  if(id&&ISUUID(id)){
   app.innerHTML='<div class="wrap" style="padding:64px 0"><div class="empty">Loading project…</div></div>';
+  await checkServer();if(location.hash.indexOf(id)<0)return;
+  if(auth.state!=='in'){auth.next='#/project/'+id;auth.reason='Log in to open your projects.';location.hash='#/login';return}
   try{const r=await api('GET','/api/projects/'+id);if(location.hash.indexOf(id)<0)return;srv.state='ready';return studioRender(id,Object.assign({},r.project,{src:'server'}))}
   catch(e){if(location.hash.indexOf(id)<0)return;const nf=e.status===404;
    app.innerHTML='<div class="wrap" style="padding:64px 0"><div class="empty"><h3 style="color:var(--text)">'+(nf?'Project not found':'Could not load this project')+'</h3><p>'+(nf?'It may have been deleted, or it belongs to a different browser.':esc(e.message)+' Your other projects, including local-only ones, are still available.')+'</p>'+(nf?'':'<button class="btn" id="rt">Try again</button> ')+'<a class="btn ghost" href="#/dashboard">Back to projects</a></div></div>';
    const rt=$('#rt');if(rt)rt.onclick=()=>studio(id);return}}
- if(!id&&srv.state==='unknown'){app.innerHTML='<div class="wrap" style="padding:64px 0"><div class="empty">Connecting to server storage…</div></div>';await checkServer();if(location.hash!=='#/new')return}
+ if(!id){if(srv.state==='unknown'){app.innerHTML='<div class="wrap" style="padding:64px 0"><div class="empty">Connecting to server storage…</div></div>';await checkServer();if(location.hash!=='#/new')return}
+  if(srv.state==='ready'&&auth.state!=='in'){auth.next='#/new';auth.reason='Log in or create an account to start a project.';location.hash='#/login';return}}
  return studioRender(id,id?get(id):null)}
 function studioRender(id,p0){let p=p0||null;
  if(id&&!p){{app.innerHTML='<div class="wrap" style="padding:64px 0"><div class="empty"><h3 style="color:var(--text)">Project not found</h3><p>It may have been deleted, or its saved data is unreadable.</p><a class="btn" href="#/dashboard">Back to projects</a></div></div>';return}}
- cur=p?{...p,src:p.src||'local'}:{id:null,name:'',type:'cafe',desc:'',audience:'',style:'Modern',pages:['Services','Gallery'],html:'',generatedAt:null,mode:null,created:null,version:0,src:(srv.state==='ready'?'server':'local')};
+ cur=p?{...p,src:p.src||'local'}:{id:null,name:'',type:'cafe',desc:'',audience:'',style:'Modern',pages:['Services','Gallery'],html:'',generatedAt:null,mode:null,created:null,version:0,src:(srv.state==='ready'&&auth.state==='in'?'server':'local')};
  aiBusy=false;cur.history=Array.isArray(cur.history)?cur.history.filter(h=>h&&typeof h.instruction==='string'&&typeof h.prev==='string'):[];const saved=p&&p.html;draft=saved?{html:p.html,at:p.generatedAt,mode:p.mode,saved:true}:null;
  const pg=['Services','Pricing','Gallery','Blog'];
  app.innerHTML=`<div class="wrap"><div class="ws"><div class="card f"><h2 style="margin:0 0 4px">${id?'Project settings':'Describe your business'}</h2><p class="note" style="margin:0">Mode: <b>Demonstration (templates)</b>. AI generation is not configured.</p>
@@ -397,8 +543,8 @@ function aiPanel(){return `<div class="ai" id="ai"><h3 style="margin:0 0 4px;fon
 function aiMsg(k,t){const m=$('#aimsg');if(m)m.innerHTML='<div class="msg '+k+'">'+esc(t)+'</div>'}
 function aiRender(){const st=$('#aist');if(!st)return;
  const m={checking:['','Checking AI backend…'],ready:['ok','AI backend connected'],noconfig:['warn','Backend is running but the Gemini API key is not configured.'],down:['warn','AI backend not reachable at '+(apiBase()||'this site')+'. Start it with npm start (see README)']}[aiStatus];
- st.innerHTML='<span class="badge '+m[0]+'">'+esc(m[1])+'</span>';
- $('#ai_go').disabled=aiBusy||!draft;$('#ai_go').textContent=aiBusy?'Applying…':'Apply Changes';$('#ai_p').disabled=aiBusy;$('#ai_undo').disabled=aiBusy||!cur.history.length;
+ st.innerHTML=auth.state!=='in'?'<span class="badge warn">Log in to use AI editing</span> <a href="#/login" style="text-decoration:underline">Log in</a>':'<span class="badge '+m[0]+'">'+esc(m[1])+'</span>';
+ $('#ai_go').disabled=aiBusy||!draft||auth.state!=='in';$('#ai_go').textContent=aiBusy?'Applying…':'Apply Changes';$('#ai_p').disabled=aiBusy;$('#ai_undo').disabled=aiBusy||!cur.history.length;
  $('#aih').innerHTML=cur.history.length?'<p class="note" style="margin:12px 0 4px">Edit history (newest first)</p><ol class="hist" reversed>'+cur.history.slice().reverse().map(h=>'<li>'+esc(h.instruction)+' <span class="note">'+new Date(h.at).toLocaleTimeString()+'</span></li>').join('')+'</ol>':'';
  if(!draft&&!aiBusy&&!$('#aimsg').textContent)aiMsg('','Generate a website first to enable AI editing.')}
 async function health(){aiStatus='checking';aiRender();try{const c=new AbortController(),t=setTimeout(()=>c.abort(),20000);const r=await fetch(apiBase()+'/api/health',{signal:c.signal});clearTimeout(t);const j=await r.json();aiStatus=j&&j.aiConfigured?'ready':'noconfig'}catch(e){aiStatus='down'}aiRender()}
@@ -412,7 +558,8 @@ async function applyEdit(){
  read();const me=cur;aiBusy=true;aiMsg('','The AI is editing your website. This can take up to a minute…');aiRender();
  const c=new AbortController(),to=setTimeout(()=>c.abort(),110000);
  try{
-  const r=await fetch(apiBase()+'/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},signal:c.signal,body:JSON.stringify({html:draft.html,instruction:ins,context:{name:cur.name,type:cur.type,style:cur.style}})});
+  const r=await fetch(apiBase()+'/api/edit',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','X-CSRF-Token':auth.csrf||''},signal:c.signal,body:JSON.stringify({html:draft.html,instruction:ins,projectId:cur.src==='server'&&cur.id?cur.id:undefined,context:{name:cur.name,type:cur.type,style:cur.style}})});
+  if(r.status===401){markOut();auth.reason='Your session expired. Log in again.';throw new Error('Your session expired. Log in again to use AI editing.')}
   let j=null;try{j=await r.json()}catch(e){}
   if(!r.ok||!j||typeof j.html!=='string'){throw new Error((j&&j.error&&j.error.message)||(r.status===404?'No AI backend was found at this address. Start it or set its URL under Backend settings.':'The server returned an unexpected response (HTTP '+r.status+').'))}
   if(cur!==me)return;
@@ -424,5 +571,6 @@ async function applyEdit(){
  finally{clearTimeout(to);if(cur===me){aiBusy=false;stateBox()}}
 }
 function undoEdit(){if(!cur.history.length||aiBusy)return;const h=cur.history.pop();draft={html:h.prev,at:Date.now(),mode:cur.history.length?'ai':'demo',saved:false};showPv();touchSave();aiMsg('ok','Undid: "'+h.instruction+'".'+(saver?' Autosaving…':' The preview is unsaved.'));stateBox()}
+checkServer().then(renderAuthNav);
 route();
 </script></body></html>
