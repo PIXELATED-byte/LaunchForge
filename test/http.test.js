@@ -174,3 +174,74 @@ test('oversized bodies are rejected in the API error format', { skip }, () => wi
   const bad = await b.call('POST', '/api/projects', { csrf: r.body.csrf, raw: '{not json' });
   assert.equal(bad.status, 400); assert.equal(bad.body.error.code, 'BAD_JSON');
 }));
+
+// ---------------------------------------------------------------- social sign-in wiring (the real Express routes)
+// No provider account and no network call are needed: these prove routing, the state/session binding, and that nothing secret is exposed.
+const withEnv = async (vars, fn) => {
+  const old = {}; for (const k of Object.keys(vars)) { old[k] = process.env[k]; process.env[k] = vars[k]; }
+  try { return await fn(); } finally { for (const k of Object.keys(vars)) { if (old[k] === undefined) delete process.env[k]; else process.env[k] = old[k]; } }
+};
+// server.js loads your real .env. Blank every provider variable so these tests behave the same whatever you have configured locally.
+const NO_OAUTH = { GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', GITHUB_CLIENT_ID: '', GITHUB_CLIENT_SECRET: '', APPLE_CLIENT_ID: '', APPLE_TEAM_ID: '', APPLE_KEY_ID: '', APPLE_PRIVATE_KEY: '', APPLE_DOMAIN_ASSOCIATION: '', PUBLIC_BASE_URL: '', RENDER_EXTERNAL_URL: '' };
+const oauthServer = fn => withServer(port => withEnv(NO_OAUTH, () => fn(port)));
+const GOOGLE_ENV = { GOOGLE_CLIENT_ID: 'test-google-id', GOOGLE_CLIENT_SECRET: 'test-google-secret-DO-NOT-LEAK' };
+
+test('providers endpoint: lists all three, none available when nothing is configured, no configuration values exposed', { skip }, () => oauthServer(async port => {
+  const r = await browser(port).call('GET', '/api/auth/providers', { origin: null });
+  assert.equal(r.status, 200); assert.equal(r.headers['cache-control'], 'no-store');
+  for (const p of ['google', 'github', 'apple']) assert.deepEqual(r.body[p], { available: false, reason: 'not_configured' });
+}));
+test('providers endpoint: a configured provider is reported available, and only as a boolean', { skip }, () => oauthServer(port => withEnv(GOOGLE_ENV, async () => {
+  const r = await browser(port).call('GET', '/api/auth/providers', { origin: null });
+  assert.deepEqual(r.body.google, { available: true }); assert.equal(r.body.github.available, false);
+  assert.ok(!JSON.stringify(r.body).includes('test-google'));
+})));
+test('start: unknown provider is 404; an unconfigured one goes back to the login page with a clear code and never to a provider', { skip }, () => oauthServer(async port => {
+  const b = browser(port);
+  assert.equal((await b.call('GET', '/api/auth/oauth/twitter/start', { origin: null })).status, 404);
+  const r = await b.call('GET', '/api/auth/oauth/github/start', { origin: null });
+  assert.equal(r.status, 303); assert.equal(r.headers.location, '/#/login?oauth_error=not_configured');
+}));
+test('start: a configured provider redirects with state + PKCE, sets a hardened session cookie, and never exposes the secret', { skip }, () => oauthServer(port => withEnv(GOOGLE_ENV, async () => {
+  const r = await browser(port).call('GET', '/api/auth/oauth/google/start', { origin: null });
+  assert.equal(r.status, 303);
+  const u = new URL(r.headers.location);
+  assert.equal(u.origin + u.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
+  assert.equal(u.searchParams.get('client_id'), 'test-google-id'); assert.equal(u.searchParams.get('response_type'), 'code');
+  assert.equal(u.searchParams.get('code_challenge_method'), 'S256'); assert.ok(u.searchParams.get('state').length >= 32);
+  assert.equal(u.searchParams.get('redirect_uri'), `https://127.0.0.1:${port}/api/auth/oauth/google/callback`);
+  assert.ok(!r.headers.location.includes('test-google-secret'));
+  const c = r.setCookie.join(';'); assert.match(c, /__Host-lf\.sid=/); assert.match(c, /HttpOnly/i); assert.match(c, /Secure/i);
+})));
+test('callback: no matching state means no login (a forged callback cannot sign anyone in)', { skip }, () => oauthServer(async port => {
+  const b = browser(port);
+  const r = await b.call('GET', '/api/auth/oauth/google/callback?code=attacker&state=forged', { origin: null });
+  assert.equal(r.status, 303); assert.equal(r.headers.location, '/#/login?oauth_error=state');
+  assert.equal((await b.call('GET', '/api/auth/me', { origin: null })).body.user, null);
+}));
+test('callback: the state belongs to the browser that started the flow; another browser cannot finish it', { skip }, () => oauthServer(port => withEnv(GOOGLE_ENV, async () => {
+  const victim = browser(port), attacker = browser(port);
+  const s = await victim.call('GET', '/api/auth/oauth/google/start', { origin: null });
+  const state = new URL(s.headers.location).searchParams.get('state');
+  const r = await attacker.call('GET', '/api/auth/oauth/google/callback?code=x&state=' + encodeURIComponent(state), { origin: null });
+  assert.equal(r.headers.location, '/#/login?oauth_error=state');
+})));
+test('callback: a provider error (user pressed Cancel) returns to the login page with a friendly code', { skip }, () => oauthServer(async port => {
+  const r = await browser(port).call('GET', '/api/auth/oauth/google/callback?error=access_denied', { origin: null });
+  assert.equal(r.headers.location, '/#/login?oauth_error=cancelled');
+}));
+test('Apple answers with a cross-site form POST: it is accepted (no Origin/CSRF header rule) but still needs a valid state', { skip }, () => oauthServer(async port => {
+  const r = await browser(port).call('POST', '/api/auth/oauth/apple/callback', { origin: 'https://appleid.apple.com', raw: 'code=abc&state=forged', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+  assert.equal(r.status, 303); assert.equal(r.headers.location, '/#/login?oauth_error=state');
+}));
+test('Apple domain-verification file is served only when configured', { skip }, () => oauthServer(async port => {
+  const b = browser(port);
+  assert.equal((await b.call('GET', '/.well-known/apple-developer-domain-association.txt', { origin: null })).status, 404);
+  await withEnv({ APPLE_DOMAIN_ASSOCIATION: 'abc123' }, async () => assert.equal((await b.call('GET', '/.well-known/apple-developer-domain-association.txt', { origin: null })).status, 200));
+}));
+test('email/password still works end to end alongside the social routes (register, session, logout)', { skip }, () => oauthServer(async port => {
+  const b = browser(port); const r = await reg(b); assert.equal(r.status, 201);
+  const me = await b.call('GET', '/api/auth/me', { origin: null }); assert.equal(me.body.user.email, r.body.user.email);
+  assert.equal((await b.call('POST', '/api/auth/logout', { body: {}, csrf: r.body.csrf })).status, 200);
+  assert.equal((await b.call('GET', '/api/auth/me', { origin: null })).body.user, null);
+}));

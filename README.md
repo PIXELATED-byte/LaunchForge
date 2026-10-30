@@ -40,6 +40,9 @@ npm start                     # open http://localhost:3000
 ```
 Locally the page talks to your local server and cookies use `SameSite=Lax` over http. This does not prove production behaviour (see "Verify the real origins").
 
+## Social sign-in (Google, GitHub, Apple)
+Implemented but **off by default**: a provider is live only when its environment variables are set and the optional migration `003_oauth.sql` has been applied by you (`npm run migrate -- --with-optional --apply`; it is skipped by startup, `AUTO_MIGRATE` and a plain `--apply`). See **OAUTH.md** for the variables, provider-console steps, callback URLs, the safe procedure, what was and was not verified, and why "Forgot password" is not included. `npm run oauth:check` shows what is configured (no secret values are printed).
+
 ## Tests
 ```
 npm test                                                  # no database needed

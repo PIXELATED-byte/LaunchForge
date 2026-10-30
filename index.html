@@ -62,6 +62,45 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.chip{background:var(--panel2);border:1px solid var(--line);border-radius:99px;padding:4px 10px;font-size:13px;color:var(--mute);cursor:pointer}.chip:hover{color:var(--text);border-color:var(--v)}
 .msg{margin-top:10px;padding:9px 12px;border-radius:10px;font-size:14px;background:var(--panel2)}.msg.ok{color:var(--ok)}.msg.err{color:var(--err)}
 .hist{margin:0;padding-left:18px;font-size:14px;color:var(--mute)}
+/* ---- sign in / create account ---- */
+.au{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);min-height:calc(100vh - 61px)}
+.au-side{position:relative;overflow:hidden;padding:72px 56px;background:radial-gradient(900px 520px at 8% 0%,rgba(139,92,246,.34),transparent 62%),radial-gradient(700px 420px at 100% 100%,rgba(109,63,224,.24),transparent 60%),#100d1b;border-right:1px solid var(--line);display:flex;flex-direction:column;justify-content:center}
+.au-side h2{font-size:clamp(30px,3.4vw,46px);line-height:1.08;letter-spacing:-.02em;margin:0 0 14px;max-width:520px}
+.au-side p{color:var(--mute);max-width:470px;margin:0 0 30px;font-size:17px}
+.au-pts{list-style:none;padding:0;margin:0;display:grid;gap:16px;max-width:470px}
+.au-pts li{display:flex;gap:12px;align-items:flex-start}.au-pts svg{flex:none;margin-top:2px;color:#a78bfa}
+.au-main{display:flex;align-items:center;justify-content:center;padding:48px 20px}
+.au-card{width:100%;max-width:420px}
+.au-tabs{display:grid;grid-template-columns:1fr 1fr;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:4px;margin:0 0 24px}
+.au-tabs a{text-align:center;padding:9px 10px;border-radius:9px;color:var(--mute);font-weight:600;font-size:15px;transition:background .15s,color .15s}
+.au-tabs a:hover{color:var(--text)}.au-tabs a[aria-current=page]{background:var(--panel2);color:var(--text);box-shadow:0 0 0 1px var(--line) inset}
+.au-tabs a:focus-visible{outline:2px solid var(--v);outline-offset:1px}
+.au h1{font-size:28px;line-height:1.2;letter-spacing:-.01em;margin:0 0 6px}.au-sub{color:var(--mute);margin:0 0 22px}
+.au-status{border:1px solid var(--line);background:var(--panel);border-radius:11px;padding:10px 12px;font-size:14px;color:var(--mute);margin:0 0 16px}
+.au-status.warn{border-color:#6b5316;color:var(--warn)}
+.au-social{display:grid;gap:10px}
+.au-sb{display:flex;align-items:center;gap:12px;width:100%;min-height:46px;padding:0 16px;border-radius:11px;border:1px solid var(--line);font-weight:600;font-size:15px;cursor:pointer;text-align:left;transition:transform .08s,box-shadow .15s,border-color .15s}
+.au-sb svg{flex:none;width:20px;height:20px}.au-sb .t{flex:1}.au-sb small{font-weight:500;font-size:12px;opacity:.8}
+.au-sb.google{background:#fff;color:#1f1f1f;border-color:#dadce0}.au-sb.github{background:#24292f;color:#fff;border-color:#3d444d}.au-sb.apple{background:#fff;color:#000;border-color:#dadce0}
+.au-sb:hover:not([aria-disabled=true]){transform:translateY(-1px);box-shadow:0 8px 20px rgba(0,0,0,.35)}
+.au-sb[aria-disabled=true]{opacity:.55;cursor:not-allowed}
+.au-sb:focus-visible{outline:2px solid #c4b5fd;outline-offset:2px}
+.au-or{display:flex;align-items:center;gap:12px;color:var(--mute);font-size:13px;margin:20px 0}.au-or:before,.au-or:after{content:"";flex:1;height:1px;background:var(--line)}
+.au-field{margin-bottom:14px}.au-field label{display:block;font-size:14px;font-weight:600;margin-bottom:6px}
+.au-in{position:relative}
+.au-in input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 14px;min-height:46px;transition:border-color .15s,box-shadow .15s}
+.au-in input:hover{border-color:#40395c}.au-in input:focus{outline:none;border-color:var(--v);box-shadow:0 0 0 3px rgba(139,92,246,.28)}
+.au-in input[aria-invalid=true]{border-color:var(--err)}.au-in input.pw{padding-right:50px}
+.au-eye{position:absolute;right:4px;top:4px;width:38px;height:38px;border:0;background:none;color:var(--mute);border-radius:8px;cursor:pointer;display:grid;place-items:center}
+.au-eye:hover{color:var(--text);background:var(--panel2)}
+.au-hint{font-size:13px;color:var(--mute);margin-top:6px}.au-fe{font-size:13px;color:var(--err);margin-top:6px}.au-fe:empty{display:none}
+.au-alert{border:1px solid #6e2b2b;background:rgba(248,113,113,.09);color:#fecaca;border-radius:11px;padding:10px 12px;font-size:14px;margin:0 0 14px}.au-alert:empty{display:none}.au-social+.au-alert{margin:12px 0 0}
+.au-submit{width:100%;min-height:48px;border-radius:11px;font-size:16px;display:flex;align-items:center;justify-content:center;gap:10px;margin-top:6px}
+.au-spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite}
+.au-legal{font-size:13px;color:var(--mute);margin:18px 0 0;text-align:center}.au-legal a{text-decoration:underline}
+.links a,.links button,#authnav a,#authnav button{white-space:nowrap}
+@media(max-width:560px){nav.top .wrap{gap:12px}.links{gap:12px}#authnav a.btn{display:none}}
+@media(max-width:880px){.au{grid-template-columns:1fr;min-height:0}.au-side{display:none}.au-main{padding:28px 18px 56px;align-items:flex-start}}
 </style></head><body>
 <nav class="top"><div class="wrap"><a class="logo" href="#/"><i></i>LaunchForge</a>
 <div class="links"><button class="l hide" data-s="features">Features</button><button class="l hide" data-s="pricing">Pricing</button><button class="l hide" data-s="faq">FAQ</button><a href="#/about" class="hide">About</a><a href="#/contact" class="hide">Contact</a><a class="btn sm" href="#/dashboard">Dashboard</a><span id="authnav" style="display:flex;gap:10px;align-items:center"></span></div></div></nav>
@@ -90,6 +129,10 @@ const srv={state:'unknown',msg:'',at:0}; // state: unknown | ready | unconfigure
 const ISUUID=s=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 // Pre-accounts token (Stage 1). Never created any more; read only so old projects can be claimed after login.
 function legacyToken(){try{const t=localStorage.getItem(OKEY);return /^[A-Za-z0-9_-]{32,128}$/.test(t||'')?t:null}catch(e){return null}}
+/* XSITE-START */
+// True when the API is on a different origin than this page (cookies are then "third-party": Safari and others block them).
+function isCrossSite(base,here){try{return !!base&&new URL(base,here).origin!==new URL(here).origin}catch(e){return false}}
+/* XSITE-END */
 async function apiRaw(method,path,body,timeout){
  const c=new AbortController(),t=setTimeout(()=>c.abort(),timeout||20000);
  try{
@@ -120,17 +163,74 @@ async function doLogout(){
  try{await api('POST','/api/auth/logout',{})}catch(e){if(!e.auth){toast('Could not log out: '+e.message);return}}
  markOut();draft=null;rows=[];auth.next=null;auth.reason='';toast('Logged out');location.hash='#/'}
 async function authRoute(m){await checkServer();if(auth.state==='in'){location.hash=auth.next||'#/dashboard';return}authPage(m)}
+/* AUTHUI-START */
+// Pure helpers for the sign-in page (unit-tested in Node).
+const OAUTH_MSG={cancelled:'Sign-in was cancelled. You can try again, or use your email and password.',state:'That sign-in attempt expired or was interrupted. Please try again.',provider_error:'The provider could not complete the sign-in. Please try again in a moment.',no_verified_email:'The provider did not share a verified email address, so no account could be created.',account_exists:'An account with this email already exists. Log in with your email and password.',not_configured:'That sign-in method is not set up on this server.',needs_upgrade:'Social sign-in is waiting for a database upgrade on this server.',rate_limit:'Too many attempts. Wait a few minutes and try again.',failed:'Sign-in failed. Please try again.'};
+function oauthMessage(code){return code?(OAUTH_MSG[code]||OAUTH_MSG.failed):''}
+const PROVIDER_LABEL={google:'Google',github:'GitHub',apple:'Apple'};
+// What one social button looks like. info: undefined = still checking, null = could not ask, or {available, reason} from the server.
+function providerView(name,info,serverOff){
+ const L=PROVIDER_LABEL[name]||name;
+ if(serverOff)return{disabled:true,note:'Unavailable',msg:'The server is not reachable right now, so '+L+' sign-in is unavailable.'};
+ if(info===undefined)return{disabled:true,note:'Checking…',msg:''};
+ if(info===null||typeof info!=='object')return{disabled:true,note:'Unavailable',msg:L+' sign-in is unavailable right now. Use your email and password instead.'};
+ if(info.available===true)return{disabled:false,note:'',msg:''};
+ if(info.reason==='needs_database_upgrade')return{disabled:true,note:'Not available yet',msg:L+' sign-in is waiting for a database upgrade on this server. Use your email and password for now.'};
+ return{disabled:true,note:'Not configured',msg:L+' sign-in is not set up on this server yet. Use your email and password instead.'}}
+function emailProblem(v){v=String(v||'').trim();if(!v)return'Enter your email address.';return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)?'':'Enter a valid email address.'}
+function passwordProblem(v,reg){v=String(v||'');if(!v)return reg?'Choose a password.':'Enter your password.';if(reg&&v.length<10)return'Use at least 10 characters.';if(v.length>128)return'Use at most 128 characters.';return''}
+/* AUTHUI-END */
+const AU_G='<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
+const AU_GH='<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>';
+const AU_AP='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>';
+const AU_ICON={google:AU_G,github:AU_GH,apple:AU_AP};
+const AU_EYE='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const AU_EYE_OFF='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19c-6.4 0-10-7-10-7a18.5 18.5 0 0 1 5.06-5.94M9.9 5.1A10.9 10.9 0 0 1 12 5c6.4 0 10 7 10 7a18.5 18.5 0 0 1-2.16 3.19M1 1l22 22"/></svg>';
+const AU_OK='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>';
+function socialHtml(provs,off){return['google','github','apple'].map(n=>{const v=providerView(n,provs&&provs[n],off);const L=PROVIDER_LABEL[n];
+ return '<button type="button" class="au-sb '+n+'" data-p="'+n+'"'+(v.disabled?' aria-disabled="true"':'')+'>'+AU_ICON[n]+'<span class="t">Continue with '+L+'</span>'+(v.note?'<small>'+esc(v.note)+'</small>':'')+'</button>'}).join('')}
 function authPage(mode){const reg=mode==='register';const off=srv.state!=='ready';
- app.innerHTML=`<div class="wrap" style="max-width:440px;padding:56px 20px 70px"><h1 style="font-size:30px;margin:0 0 6px">${reg?'Create your account':'Log in'}</h1>
-<p class="note" role="status">${off?(srv.state==='unconfigured'?'Accounts are not available: server storage is not configured.':'The server is not reachable right now ('+esc(srv.msg||'try again soon')+'). Local-only projects still work from the dashboard.'):esc(auth.reason||'Projects are saved to your account.')}</p>
-<div class="card f"><label for="em">Email</label><input id="em" type="email" autocomplete="email" maxlength="254"><label for="pw">Password</label><input id="pw" type="password" autocomplete="${reg?'new-password':'current-password'}" maxlength="128">${reg?'<p class="note" style="margin:6px 0 0">At least 10 characters.</p>':''}<div class="err" id="auth_err" role="alert"></div><p style="margin:16px 0 0"><button class="btn" id="auth_go" style="width:100%" ${off?'disabled':''}>${reg?'Create account':'Log in'}</button></p></div>
-<p class="note" style="margin-top:14px">${reg?'Already have an account? <a href="#/login" style="text-decoration:underline">Log in</a>':'New here? <a href="#/register" style="text-decoration:underline">Create an account</a>'}</p></div>`;
- const go=async()=>{const em=$('#em').value.trim(),pw=$('#pw').value,err=$('#auth_err'),b=$('#auth_go');err.textContent='';
-  if(!em||!pw){err.textContent='Enter your email and password.';return}
-  b.disabled=true;b.textContent=reg?'Creating…':'Logging in…';
-  try{const j=await apiRaw('POST','/api/auth/'+(reg?'register':'login'),{email:em,password:pw});$('#pw').value='';auth.state='in';auth.user=j.user;auth.csrf=j.csrf;auth.reason='';renderAuthNav();const t=auth.next||'#/dashboard';auth.next=null;location.hash=t}
-  catch(e){err.textContent=e.message;b.disabled=false;b.textContent=reg?'Create account':'Log in'}};
- $('#auth_go').onclick=go;['#em','#pw'].forEach(x=>$(x).addEventListener('keydown',e=>{if(e.key==='Enter')go()}));$('#em').focus()}
+ const oerr=new URLSearchParams((location.hash.split('?')[1])||'').get('oauth_error');
+ if(oerr)history.replaceState(null,'',location.pathname+location.search+'#/'+(reg?'register':'login'));
+ const st=off?(srv.state==='unconfigured'?'Accounts are not available: server storage is not configured.':'The server is not reachable right now ('+esc(srv.msg||'try again soon')+'). Local-only projects still work from the dashboard.'):esc(auth.reason||'');
+ app.innerHTML=`<div class="au"><aside class="au-side"><h2>From idea to online business.</h2><p>Tell LaunchForge about your business and get a website you can keep improving.</p><ul class="au-pts"><li>${AU_OK}<span>Generate a website from your business details</span></li><li>${AU_OK}<span>Refine it with AI edits written in plain English</span></li><li>${AU_OK}<span>Projects are saved to your account, ready when you return</span></li></ul></aside>
+<div class="au-main"><div class="au-card"><nav class="au-tabs" aria-label="Account"><a href="#/login"${reg?'':' aria-current="page"'}>Sign in</a><a href="#/register"${reg?' aria-current="page"':''}>Create account</a></nav>
+<h1>${reg?'Create your account':'Welcome back'}</h1><p class="au-sub">${reg?'Start building your website in minutes.':'Sign in to open your projects.'}</p>
+${st?`<p class="au-status${off?' warn':''}" role="status">${st}</p>`:''}
+${isCrossSite(apiBase(),location.href)?`<p class="au-status" role="note">Signing in with email from this address relies on cross-site cookies, which Safari and some other browsers block. For reliable login use <a href="${esc(apiBase())}/" style="text-decoration:underline">${esc(apiBase().replace(/^https?:\/\//,''))}</a>.</p>`:''}
+<div class="au-social" id="au_social">${socialHtml(undefined,off)}</div><p class="${oerr?'au-alert':'au-hint'}" id="au_social_msg" role="${oerr?'alert':'status'}" aria-live="polite">${esc(oauthMessage(oerr))}</p>
+<div class="au-or" role="separator"><span>or continue with email</span></div>
+<form id="auth_form" novalidate><div class="au-alert" id="auth_err" role="alert"></div>
+<div class="au-field"><label for="em">Email</label><div class="au-in"><input id="em" type="email" inputmode="email" autocomplete="${reg?'email':'username'}" autocapitalize="none" spellcheck="false" maxlength="254" placeholder="you@company.com" aria-describedby="em_e"></div><div class="au-fe" id="em_e"></div></div>
+<div class="au-field"><label for="pw">Password</label><div class="au-in"><input class="pw" id="pw" type="password" autocomplete="${reg?'new-password':'current-password'}" maxlength="128" placeholder="${reg?'At least 10 characters':'Your password'}" aria-describedby="pw_e${reg?' pw_h':''}"><button type="button" class="au-eye" id="pw_eye" aria-label="Show password" aria-pressed="false">${AU_EYE}</button></div><div class="au-fe" id="pw_e"></div>${reg?'<div class="au-hint" id="pw_h">Use at least 10 characters.</div>':''}</div>
+<button class="btn au-submit" id="auth_go" type="submit"${off?' disabled':''}>${reg?'Create account':'Sign in'}</button></form>
+<p class="au-legal">By continuing you agree to the <a href="#/terms">Terms</a> and <a href="#/privacy">Privacy Policy</a>.</p></div></div></div>`;
+ const label=reg?'Create account':'Sign in';
+ const busy=(on,t)=>{const b=$('#auth_go');if(!b)return;b.disabled=on||off;b.setAttribute('aria-busy',on?'true':'false');b.innerHTML=on?'<span class="au-spin" aria-hidden="true"></span><span>'+t+'</span>':label};
+ const mark=(id,msg)=>{const i=$(id),e=$(id+'_e');if(!i)return;i.setAttribute('aria-invalid',msg?'true':'false');e.textContent=msg||''};
+ // Social buttons: reflect what the server really offers; a click on an unavailable one explains why instead of doing nothing.
+ let provs;const sm=$('#au_social_msg');
+ const paint=()=>{const c=$('#au_social');if(c)c.innerHTML=socialHtml(provs,off)};
+ $('#au_social').onclick=e=>{const b=e.target.closest('.au-sb');if(!b)return;const n=b.dataset.p,v=providerView(n,provs&&provs[n],off);
+  if(v.disabled){sm.textContent=v.msg;return}
+  sm.textContent='';b.setAttribute('aria-disabled','true');b.querySelector('.t').textContent='Redirecting to '+PROVIDER_LABEL[n]+'…';
+  location.assign(apiBase()+'/api/auth/oauth/'+n+'/start')};
+ if(!off)apiRaw('GET','/api/auth/providers',null,8000).then(j=>{provs=j},()=>{provs=null}).then(()=>{if($('#au_social')&&location.hash.startsWith('#/'+(reg?'register':'login')))paint()});
+ // Returning with the browser's Back button can restore this page frozen in its "Redirecting…" state.
+ addEventListener('pageshow',ev=>{if(ev.persisted&&/^#\/(login|register)/.test(location.hash))authPage(mode)},{once:true});
+ $('#pw_eye').onclick=()=>{const p=$('#pw'),show=p.type==='password';p.type=show?'text':'password';const b=$('#pw_eye');b.setAttribute('aria-pressed',show?'true':'false');b.setAttribute('aria-label',show?'Hide password':'Show password');b.innerHTML=show?AU_EYE_OFF:AU_EYE;p.focus()};
+ $('#em').addEventListener('blur',()=>{if($('#em').value)mark('#em',emailProblem($('#em').value))});
+ $('#em').addEventListener('input',()=>{if($('#em').getAttribute('aria-invalid')==='true')mark('#em',emailProblem($('#em').value))});
+ $('#pw').addEventListener('input',()=>{if($('#pw').getAttribute('aria-invalid')==='true')mark('#pw',passwordProblem($('#pw').value,reg))});
+ const go=async()=>{const em=$('#em').value.trim(),pw=$('#pw').value,err=$('#auth_err');err.textContent='';
+  const pe1=emailProblem(em),pe2=passwordProblem(pw,reg);mark('#em',pe1);mark('#pw',pe2);if(pe1||pe2){(pe1?$('#em'):$('#pw')).focus();return}
+  busy(true,reg?'Creating account…':'Signing in…');
+  try{const j=await apiRaw('POST','/api/auth/'+(reg?'register':'login'),{email:em,password:pw});let ok=null;try{ok=await apiRaw('GET','/api/auth/me')}catch(x){}
+  if(!ok||!ok.user){$('#pw').value='';err.textContent=(reg?'Your account was created, but ':'')+'your browser did not keep the login session. This usually means it blocks cookies from another site (common in Safari). Open LaunchForge at '+apiBase()+'/ and log in there.';busy(false);return}
+  $('#pw').value='';auth.state='in';auth.user=j.user;auth.csrf=j.csrf;auth.reason='';renderAuthNav();const t=auth.next||'#/dashboard';auth.next=null;location.hash=t}
+  catch(e){err.textContent=e.message;busy(false)}};
+ $('#auth_form').addEventListener('submit',e=>{e.preventDefault();go()});
+ (oerr?$('#au_social_msg'):$('#em')).focus&&$('#em').focus()}
 async function legacyBanner(){const t=legacyToken();if(!t||auth.state!=='in'||srv.state!=='ready')return;
  try{const j=await api('POST','/api/auth/legacy/preview',{token:t});const b=$('#dban');if(!b||!j.count)return;
   b.insertAdjacentHTML('beforeend','<div class="msg"><b>'+j.count+' project'+(j.count>1?'s':'')+' from before accounts</b> ('+esc(j.projects.map(p=>p.name).join(', '))+') '+(j.count>1?'were':'was')+' found for this browser. <button class="btn sm" data-claim>Add to my account</button><div class="note" style="margin-top:6px">Only do this if they are your projects. They will belong to '+esc(auth.user.email)+'.</div></div>')}catch(e){}}
@@ -283,7 +383,7 @@ er.className='e ok';er.textContent='Thanks! (Demo only: nothing was sent.)';f.re
 <\/script></body></html>`}
 /* ---------- router ---------- */
 const R={};
-function route(){if(saver&&saver.isPending()){saver.flush();lastSaver=saver}saver=null;const h=location.hash.replace(/^#\/?/,'')||'';const [a,b]=h.split('/');scrollTo(0,0);
+function route(){if(saver&&saver.isPending()){saver.flush();lastSaver=saver}saver=null;const h=location.hash.replace(/^#\/?/,'')||'';const [a,b]=h.split('?')[0].split('/');scrollTo(0,0);
  if(a===''){draft=null;return landing()}if(a==='login'||a==='register')return authRoute(a);if(a==='dashboard')return dash();if(a==='new')return studio(null);if(a==='project')return studio(b);
  if(['about','contact','privacy','terms'].includes(a))return page(a);landing()}
 addEventListener('hashchange',route);
