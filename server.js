@@ -141,7 +141,7 @@ Do not use Markdown fences or explanations.
 Rules:
 - Apply the requested changes while preserving unrelated content.
 - Keep CSS and JavaScript inline.
-- Preserve LaunchForge motion markers (data-hero, data-reveal, data-stagger) and existing motion styles/scripts unless the user explicitly asks to change animation. Do not remove the LaunchForge motion runtime marker.
+- Preserve the LaunchForge motion hooks (the data-hero and data-reveal attributes and the .line spans inside headlines). LaunchForge adds its own animation stylesheet and script after your edit, so do not write CSS or JavaScript for data-hero or data-reveal and do not add class="js" to <html>. If the user asks to change an animation, change the hooks (which element, which data-reveal treatment) or your own hover and menu transitions.
 - Do not add external scripts, iframes, objects, embeds, or base tags.
 - Keep the website responsive and accessible.
 - Keep forms as client-side demonstrations.
@@ -225,7 +225,7 @@ ${ins.replace(/<\/instruction>/gi, '')}
 </instruction>
 
 <website_html>
-${html.replace(/<\/website_html>/gi, '<\\/website_html>')}
+${siteAi.stripInjectedMotion(html).replace(/<\/website_html>/gi, '<\\/website_html>')}
 </website_html>
 `;
 
@@ -264,8 +264,8 @@ ${html.replace(/<\/website_html>/gi, '<\\/website_html>')}
       return fail(res, 502, 'AI_BAD_OUTPUT', problem);
     }
 
-    // Reinstall the canonical motion runtime after edits. This is idempotent and keeps
-    // animation execution reliable even if Gemini omits or accidentally removes it.
+    // The model never sees LaunchForge's motion blocks (stripped above), so it cannot break or rewrite them. finalizeGenerated reinstalls the canonical
+    // runtime (idempotent) and removes any hero/reveal CSS the model wrote anyway.
     const edited = siteAi.finalizeGenerated(output, { name: context && context.name ? String(context.name).slice(0, 100) : 'Website' });
     return res.json({ html: edited, model: MODEL });
 

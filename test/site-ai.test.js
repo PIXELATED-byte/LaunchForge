@@ -37,7 +37,7 @@ test('prompt: the owner\'s text is data inside <business_brief>, "<" is neutrali
   assert.ok(!/<script|<system/.test(prompt));
   assert.match(prompt, /Business type: café or coffee shop/); assert.match(prompt, /Visual style: Elegant/); assert.match(prompt, /Optional sections requested: Services/);
   assert.match(system, /VISUAL STYLE: Elegant\. .*Playfair Display \+ Inter/); assert.match(system, /BUSINESS TYPE GUIDANCE: .*menu CATEGORIES/);
-  for (const rule of [/Do NOT invent facts/, /testimonials/, /DATA written by the site owner/, /No external images/, /exactly one <h1>/, /Never use fetch/]) assert.match(system, rule);
+  for (const rule of [/Do NOT invent facts/, /testimonials/, /DATA written by the site owner/, /arbitrary remote images or image hosts/, /exact URLs from the VERIFIED PHOTOGRAPHY LIBRARY, used only as <img src=/, /exactly one <h1>/, /Never use fetch/]) assert.match(system, rule);
   for (const type of Object.keys(ai.TYPES)) for (const style of ai.STYLES) { const p = ai.buildGenerationPrompt({ ...BRIEF, type, style, audience: '', pages: [] }); assert.match(p.prompt, /not given: infer/); assert.ok(p.system.includes(style)); }
 });
 
@@ -101,56 +101,50 @@ test('system prompt: requires a deliberate font pairing, Google Fonts only throu
   for (const pair of ['Space Grotesk + Inter', 'Playfair Display + Inter', 'DM Serif Display + DM Sans', 'Manrope + Inter']) assert.ok(system.includes(pair), pair);
   assert.match(system, /ONE deliberate font pairing \(a heading font and a body font\) that suits the business and the visual style/);
   assert.match(system, /ONE <link rel="stylesheet"> in <head> whose href is https:\/\/fonts\.googleapis\.com\//);
-  assert.match(system, /ONLY external resource a page may use/); assert.match(system, /Never use @import/); assert.match(system, /No external scripts, images, other stylesheets or fonts/);
+  assert.match(system, /ONLY external stylesheet or font source a page may use; photography comes only from the VERIFIED PHOTOGRAPHY LIBRARY/); assert.match(system, /Never use @import/); assert.match(system, /No external scripts, images, other stylesheets or fonts/);
   assert.match(system, /local fallback stack/); assert.match(system, /--font-heading:.*Georgia.*serif/); assert.match(system, /clamp\(/); assert.match(system, /line-height 1\.6 to 1\.7/); assert.match(system, /letter-spacing/); assert.match(system, /weights 400-500/);
   assert.ok(!/system font stacks only|no web fonts/i.test(system), 'the old "no web fonts" rule is gone');
   for (const style of ai.STYLES) assert.match(ai.buildGenerationPrompt({ ...BRIEF, style }).system, new RegExp('VISUAL STYLE: ' + style + '\\. .*Fonts: '), style + ' names a pairing');
 });
-test('system prompt: requires a coherent motion system, hero choreography, varied scroll reveals, a polished animated menu, refined interactions, restraint and a usable reduced-motion mode', () => {
+test('system prompt: the model writes motion HOOKS only; menu, interactions, restraint and reduced motion stay required', () => {
   const { system } = ai.buildGenerationPrompt(BRIEF);
-  // one motion system: shared easing and duration variables, no one-offs
   assert.match(system, /MOTION DESIGN \(choreographed, not uniform; premium means controlled and intentional, not busy\)/);
-  for (const v of ['--ease-out: cubic-bezier\\(0\\.22, 1, 0\\.36, 1\\)', '--ease-in-out: cubic-bezier\\(0\\.65, 0, 0\\.35, 1\\)', '--dur-fast: 160ms', '--dur-base: 320ms', '--dur-slow: 720ms', '--stagger: 70ms', '--rise: 18px']) assert.match(system, new RegExp(v), v);
-  assert.match(system, /define it ONCE as CSS variables on :root/); assert.match(system, /Never write one-off durations or easings, and never use "transition: all"/);
+  for (const v of ['--ease-out: cubic-bezier\\(0\\.22, 1, 0\\.36, 1\\)', '--ease-in-out: cubic-bezier\\(0\\.65, 0, 0\\.35, 1\\)', '--dur-fast: 160ms', '--dur-base: 320ms']) assert.match(system, new RegExp(v), v);
+  assert.match(system, /Motion tokens: define them ONCE as CSS variables on :root/); assert.match(system, /Never write one-off durations or easings, and never use "transition: all"/);
+  assert.ok(!/--stagger|--rise|--dur-slow/.test(system), 'the tokens LaunchForge owns are not asked of the model');
   assert.match(system, /follow the MOTION LANGUAGE given below.*one personality consistently/);
-  // hero choreography: ordered stages, CSS only, never behind .js
-  assert.match(system, /Hero choreography: one deliberate entrance sequence made with CSS @keyframes that run once, with no JavaScript/);
-  for (const stage of ['data-hero="1" \\(headline', '"2" \\(supporting copy', '"3" \\(call-to-action buttons\\)', '"4" \\(the hero visual: a clip-path inset wipe']) assert.match(system, new RegExp(stage), stage);
-  assert.match(system, /animation-delay in multiples of var\(--stagger\)/); assert.match(system, /animation-fill-mode: both/); assert.match(system, /finish within about 1\.4 seconds/); assert.match(system, /Never hide hero parts behind the \.js class/);
-  // contextual reveal treatments, stagger limited to related groups
+  // hooks, not animation
+  assert.match(system, /Hero and scroll reveals are LaunchForge's job; yours is the markup hooks/);
+  for (const stage of ['data-hero="1" \\(the eyebrow and headline\\)', '"2" \\(supporting copy and trust points\\)', '"3" \\(call-to-action buttons\\)', '"4" \\(the hero visual\\)']) assert.match(system, new RegExp(stage), stage);
+  assert.match(system, /<span class="line"><span>Line text<\/span><\/span>/);
+  for (const kind of ['"rise" \\(text blocks and list rows\\)', '"slide" \\(one half of an asymmetric split', '"mask" \\(an image plate, or a card whose image should be unveiled: put it on the container, which must contain the <img>, \\.art or <svg>; at most three\\)', '"lines" \\(a section headline written as \\.line spans\\)', '"rule" \\(a hairline element\\)']) assert.match(system, new RegExp(kind), kind);
   assert.match(system, /choose the treatment per section to suit its composition, never one effect for everything/);
-  for (const kind of ['"rise" \\(opacity plus translateY\\(var\\(--rise\\)\\)', '"slide" \\(a restrained horizontal move of at most 24px', '"mask" \\(an image plate revealed with a clip-path: inset\\(\\) wipe', '"lines" \\(section headline lines rising out of overflow:hidden', '"rule" \\(a hairline drawing in with transform: scaleX\\(\\)']) assert.match(system, new RegExp(kind), kind);
   assert.match(system, /at least three different treatments on the page and no single one for more than half of the reveals/);
-  assert.match(system, /Stagger belongs to a group, not to the page/); assert.match(system, /data-stagger on ONE container of at most five related items/); assert.match(system, /at most four groups/);
-  assert.match(system, /Everything else reveals on its own the moment it enters, with no delay inherited from its position on the page/);
-  assert.match(system, /Hide elements only under a \.js class on <html>/); assert.match(system, /visible without JavaScript/);
-  assert.match(system, /ONE IntersectionObserver for reveals/); assert.match(system, /observer\.unobserve\(el\)/); assert.match(system, /observer\.disconnect\(\)/); assert.match(system, /if IntersectionObserver is missing, reveal everything at once/);
-  assert.match(system, /apply clip-path and the scale to its inner \.art element/);
+  assert.match(system, /Write NO CSS, keyframes, transitions or JavaScript for data-hero or data-reveal, no \.revealed or \.in state classes, no IntersectionObserver for reveals, no clip-path or opacity:0 on elements that carry these hooks, and no class="js" on <html>/);
+  assert.match(system, /LaunchForge adds the single stylesheet and script that animate the hooks .*removes any competing rules, so anything you write for them is discarded/);
+  assert.ok(!/Hero choreography: one deliberate entrance sequence|Stagger belongs to a group|Hide elements only under a \.js class|data-stagger/.test(system), 'the old model-owned choreography is gone');
   // desktop navigation
   assert.match(system, /Desktop navigation: the sticky header gains a soft background by fading a ::before layer's opacity/); assert.match(system, /sentinel element has left the viewport .*never a scroll listener/);
   assert.match(system, /underline that grows from the left with transform: scaleX\(\) on hover and :focus-visible and leaves towards the right \(swap transform-origin\)/); assert.match(system, /the other links dim slightly through opacity/);
-  // mobile navigation
-  assert.match(system, /Mobile navigation: on narrow screens a hamburger button opens an animated panel/); assert.match(system, /morph smoothly into a close \(X\) icon/); assert.match(system, /outer bars translate and rotate, the middle bar fades and shrinks/);
-  assert.match(system, /animates in AND out with transform\/opacity plus visibility \(do not toggle display:none/); assert.match(system, /backdrop that fades/); assert.match(system, /appear one after another/); assert.match(system, /calc\(var\(--i\) \* 60ms\)/);
+  // mobile navigation, including the defects found in a real generated page
+  assert.match(system, /Mobile navigation: on narrow screens a hamburger button opens an animated panel/); assert.match(system, /morph smoothly into a close \(X\) icon/);
+  assert.match(system, /animates in AND out with transform\/opacity plus visibility \(do not toggle display:none/); assert.match(system, /backdrop that fades/); assert.match(system, /calc\(var\(--i\) \* 60ms\)/);
   assert.match(system, /aria-expanded, aria-controls and an aria-label that reads Open menu or Close menu/); assert.match(system, /Opening moves focus to the first link/);
   assert.match(system, /Escape, a click on the backdrop, a click on a link, and resizing to the desktop layout close the menu; on Escape focus returns to the button/); assert.match(system, /closed panel is visibility:hidden/); assert.match(system, /page scrolling is locked while it is open and restored/);
+  assert.match(system, /Keep the header, and with it the menu button, above the panel \(a higher z-index than the panel\)/); assert.match(system, /visibility 0s linear var\(--dur-base\) in its transition and transition-delay: 0s when open, so focus can move to the first link/); assert.match(system, /so that closing is not staggered/);
   // interactions
-  assert.match(system, /wrap hover-only effects in @media \(hover: hover\)/); assert.match(system, /:focus-visible twin/); assert.match(system, /translateY\(-2px\) with at most scale\(1\.02\)/); assert.match(system, /translateY\(0\) scale\(0\.98\) on :active/); assert.match(system, /:focus-visible ring/);
-  assert.match(system, /fading a pseudo-element's opacity rather than animating box-shadow/); assert.match(system, /inner media scales to at most 1\.05 inside an overflow:hidden frame/);
-  assert.match(system, /Form fields: a line under the field that draws in with transform: scaleX\(\) on :focus-within/); assert.match(system, /role="status" aria-live="polite"/);
-  assert.match(system, /Section continuity: the recurring motif/);
-  // restraint, performance, one runtime, one smooth-scroll owner
-  assert.match(system, /animate transform and opacity\. clip-path is allowed only for the hero visual and the mask plates/); assert.match(system, /Never animate width, height, top, left, margin, padding, font-size, or box-shadow on large elements/);
-  assert.match(system, /Use will-change sparingly/); assert.match(system, /No parallax, bouncing, looping or autoplaying movement, no overshoot or elastic easing, no scroll-jacking, no cursor-following effects/); assert.match(system, /Keep travel small \(24px at most\)/);
-  assert.match(system, /no animation or smooth-scroll libraries \(GSAP, AOS, Lottie, anime\.js, Framer Motion, Lenis, Locomotive\) and no external scripts, so there is exactly ONE animation runtime/);
+  assert.match(system, /wrap hover-only effects in @media \(hover: hover\)/); assert.match(system, /:focus-visible twin/); assert.match(system, /translateY\(-2px\) with at most scale\(1\.02\)/); assert.match(system, /translateY\(0\) scale\(0\.98\) on :active/);
+  assert.match(system, /fading a pseudo-element's opacity rather than animating box-shadow/); assert.match(system, /Form fields: a line under the field that draws in with transform: scaleX\(\) on :focus-within/); assert.match(system, /role="status" aria-live="polite"/);
+  assert.match(system, /the recurring motif \(hairlines, labels\) carries data-reveal="rule"/);
+  // restraint, one smooth-scroll owner, reduced motion
+  assert.match(system, /your own transitions animate transform and opacity/); assert.match(system, /Never animate width, height, top, left, margin, padding, font-size, or box-shadow on large elements/);
+  assert.match(system, /No parallax, bouncing, looping or autoplaying movement, no overshoot or elastic easing, no scroll-jacking, no cursor-following effects/); assert.match(system, /Keep travel small \(24px at most\)/);
+  assert.match(system, /No animation or smooth-scroll libraries \(GSAP, AOS, Lottie, anime\.js, Framer Motion, Lenis, Locomotive\) and no external scripts/);
   assert.match(system, /Smooth scrolling has ONE owner: the single click handler/); assert.match(system, /Do NOT also set scroll-behavior: smooth in CSS/); assert.match(system, /scroll-margin-top/);
-  assert.match(system, /complete content and the responsive layout always matter more than any effect/); assert.match(system, /on phones make reveals shorter/);
-  // a genuinely usable reduced-motion experience
-  assert.match(system, /@media \(prefers-reduced-motion: reduce\)/); assert.match(system, /sets --dur-fast, --dur-base and --dur-slow to 1ms, --stagger to 0ms and --rise to 0px/); assert.match(system, /animation: none on every \[data-hero\] element and shows every \[data-reveal\] element fully, with no transform or clip-path/);
-  assert.match(system, /mobile menu fully usable as an instant open and close/); assert.match(system, /scroll-behavior:auto/); assert.match(system, /non-moving changes \(colour, outline, underline\)/);
-  assert.match(system, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)/); assert.match(system, /skip animated scrolling, not create the observer, and reveal everything at once/);
-  assert.ok(!/prefers-reduced-motion: no-preference/.test(system));
-  assert.match(system, /JavaScript only for: the mobile menu, smooth in-page scrolling, scroll reveals \(and the header's scrolled state\)/);
+  assert.match(system, /@media \(prefers-reduced-motion: reduce\)/); assert.match(system, /sets --dur-fast and --dur-base to 1ms/); assert.match(system, /mobile menu fully usable as an instant open and close/); assert.match(system, /scroll-behavior:auto/); assert.match(system, /non-moving changes \(colour, outline, underline\)/);
+  assert.match(system, /matchMedia\("\(prefers-reduced-motion: reduce\)"\) and then skip animated scrolling and the header observer/); assert.match(system, /LaunchForge handles the hero and the reveals/);
+  assert.match(system, /JavaScript only for: the mobile menu, smooth in-page scrolling, the header's scrolled state/);
+  assert.match(system, /you wrote no CSS or JavaScript for data-hero or data-reveal and no class="js"/);
 });
 test('motion language: every visual style and business type has its own motion personality, added to the prompt', () => {
   const lang = (style, type) => { const sys = ai.buildGenerationPrompt({ ...BRIEF, style, type }).system; return sys.slice(sys.indexOf('MOTION LANGUAGE (one personality, used consistently):')); };
@@ -159,8 +153,9 @@ test('motion language: every visual style and business type has its own motion p
   for (const type of Object.keys(ai.TYPES)) byType.add(lang('Modern', type));
   assert.equal(byStyle.size, ai.STYLES.length, 'styles differ'); assert.equal(byType.size, Object.keys(ai.TYPES).length, 'business types differ');
   for (const [style, trait] of [['Modern', 'crisp and confident'], ['Minimal', 'quiet and exact'], ['Elegant', 'graceful and unhurried'], ['Playful', 'light and friendly but controlled'], ['Dark', 'cinematic and precise']]) assert.ok(lang(style, 'other').includes(style + ': ' + trait), style + ' personality');
-  assert.match(lang('Minimal', 'other'), /--rise 10px/); assert.match(lang('Elegant', 'other'), /--dur-slow 900ms/); assert.match(lang('Dark', 'other'), /accent glow or border that fades in on hover through a pseudo-element/);
-  assert.match(lang('Playful', 'other'), /never a bounce/); assert.match(lang('Modern', 'fitness'), /--dur-base 240ms/); assert.match(lang('Modern', 'portfolio'), /image-panel wipes/);
+  assert.match(lang('Minimal', 'other'), /Mostly "rise" and "rule" reveals/); assert.match(lang('Elegant', 'other'), /Image plates as "mask" reveals, section headlines as "lines"/); assert.match(lang('Dark', 'other'), /accent glow or border that fades in on hover through a pseudo-element/);
+  assert.match(lang('Playful', 'other'), /never a bounce/); assert.match(lang('Modern', 'fitness'), /--dur-base 240ms/); assert.match(lang('Modern', 'portfolio'), /image-panel "mask" reveals/);
+  for (const style of ai.STYLES) for (const type of Object.keys(ai.TYPES)) assert.ok(!/--rise|--stagger|--dur-slow|clip-path/.test(lang(style, type)), style + '/' + type + ': personalities act through reveal choices and hover timing, not through tokens the runtime owns');
   for (const style of ai.STYLES) for (const type of Object.keys(ai.TYPES)) assert.ok(!/bounce(?! \()|parallax|loop|autoplay|elastic/i.test(lang(style, type).replace(/never a bounce/, '')), style + '/' + type + ': no motion language asks for banned effects');
 });
 test('motion written to the guidance passes every check: variables, keyframes, hover media query, clip-path reveal, observer reveals, sentinel header state, animated menu, reduced motion', () => {
@@ -328,11 +323,11 @@ test('prompt: navigation is planned first and every link must hit a real, unique
 });
 test('prompt: the external-resource rule is precise, with the one Google Fonts exception and local alternatives', () => {
   const { system } = ai.buildGenerationPrompt(BRIEF);
-  assert.match(system, /EXTERNAL RESOURCES \(strict/); assert.match(system, /ONLY URL the document may load anything from is the single Google Fonts stylesheet link/);
-  for (const banned of ['no preconnect, preload, icon or favicon URLs', 'Unsplash', 'remote textures or noise files', 'Font Awesome', 'CDN scripts or stylesheets', 'no @import', 'url\\(http'])
+  assert.match(system, /EXTERNAL RESOURCES \(strict/); assert.match(system, /External resources are restricted to ONE Google Fonts stylesheet link \(as described under TYPOGRAPHY\) and exact URLs from the VERIFIED PHOTOGRAPHY LIBRARY, used only as <img src=/);
+  for (const banned of ['No other <link> tags \\(preconnect, preload, icon, favicon\\)', 'arbitrary remote images or image hosts', 'remote textures/noise', 'icon fonts or kits', 'CDN scripts/stylesheets', '@import', 'url\\(http'])
     assert.match(system, new RegExp(banned), banned);
   assert.match(system, /Do NOT add <link rel="preconnect">, rel="preload" or rel="dns-prefetch" tags, do not mention fonts\.gstatic\.com/);
-  assert.match(system, /CSS gradients .*inline <svg> elements written directly in the HTML/);
+  assert.match(system, /use purposeful inline SVG, CSS composition, a diagram, or interface illustration/);
   assert.match(system, /ONE <link rel="stylesheet"> in <head> whose href is https:\/\/fonts\.googleapis\.com\//);
 });
 test('prompt: honesty covers every claim type, bans example contact details, and requires labelled concept examples', () => {
@@ -347,7 +342,7 @@ test('prompt: honesty covers every claim type, bans example contact details, and
 });
 test('prompt: typography, responsive layout, animation, accessible navigation and reduced motion are all still required', () => {
   const { system } = ai.buildGenerationPrompt(BRIEF);
-  for (const kept of [/ONE deliberate font pairing/, /Space Grotesk \+ Inter/, /clamp\(/, /Mobile-first and fully responsive/, /hamburger button opens an animated panel/, /Hero choreography/, /ONE IntersectionObserver/, /@media \(prefers-reduced-motion: reduce\)/, /a "Skip to content" link/, /aria-expanded/, /:focus-visible/])
+  for (const kept of [/ONE deliberate font pairing/, /Space Grotesk \+ Inter/, /clamp\(/, /Mobile-first and fully responsive/, /hamburger button opens an animated panel/, /Hero and scroll reveals are LaunchForge's job/, /Write NO CSS, keyframes, transitions or JavaScript for data-hero or data-reveal/, /@media \(prefers-reduced-motion: reduce\)/, /a "Skip to content" link/, /aria-expanded/, /:focus-visible/])
     assert.match(system, kept, String(kept));
 });
 
@@ -364,25 +359,37 @@ test('finalizeGenerated: adds what models forget and always marks the page as La
 });
 
 
-test('motion runtime: finalization injects one canonical style/script and is idempotent across edits', () => {
+test('motion runtime: finalization injects one canonical stylesheet and two scripts, is idempotent across edits, and the page stays within the HTML safety rules', () => {
   const first = ai.finalizeGenerated(page(), BRIEF);
   const second = ai.finalizeGenerated(first, BRIEF);
   for (const html of [first, second]) {
-    assert.equal((html.match(/data-launchforge-motion="1"/g) || []).length, 2, 'one style and one script marker');
-    assert.equal((html.match(/@keyframes lf-enter/g) || []).length, 1);
-    assert.equal((html.match(/new IntersectionObserver/g) || []).length, 1);
-    assert.match(html, /prefers-reduced-motion:reduce/);
-    assert.match(html, /data-lf-motion-init/);
-    assert.match(html, /data-lf-reveal/);
+    assert.equal((html.match(/data-launchforge-motion="2"/g) || []).length, 3, 'one stylesheet, one head script, one body script');
+    assert.equal((html.match(/@keyframes lf-up/g) || []).length, 1);
+    assert.equal((html.match(/new IntersectionObserver/g) || []).length, 1, 'one observer from LaunchForge (the page itself has none)');
+    assert.match(html, /prefers-reduced-motion:reduce/); assert.match(html, /html\.lf-ready \[data-reveal="rise"\]:not\(\.lf-in\)/); assert.match(html, /data-lf-live/);
     assert.equal(ai.validateOutput(html, 150000), null, 'runtime stays within HTML safety rules');
+    assert.deepEqual(ai.generationProblems(html, BRIEF).filter(p => p.critical), []);
   }
-  assert.equal(second, first, 're-finalization should not duplicate or alter canonical runtime');
+  assert.equal(second, first, 're-finalization does not duplicate or alter the canonical runtime');
+  assert.equal(ai.injectMotionRuntime(first), first, 'the exported injector is idempotent too');
 });
-test('motion runtime: has a visible fallback when IntersectionObserver is unavailable and honors reduced motion', () => {
+test('motion runtime: the previous injector (version 1, data-lf-*) is replaced in place, never stacked, and /api/edit hands the model a page without any LaunchForge motion block', () => {
+  const v1 = page('<h1 data-hero="1">x</h1>').replace('</head>', '<style data-launchforge-motion="1">html.lf-motion-ready [data-lf-reveal]{opacity:0}html.lf-motion-ready [data-hero="4"]{animation:lf-enter 760ms both}</style></head>')
+    .replace('</body>', '<script data-launchforge-motion="1">(function(){var io=new IntersectionObserver(function(){});document.documentElement.classList.add("lf-motion-ready")})();</script></body>');
+  const fixed = ai.finalizeGenerated(v1, BRIEF);
+  assert.ok(!/lf-motion-ready|lf-enter|data-lf-reveal|data-lf-motion-init/.test(fixed), 'nothing of version 1 survives');
+  assert.equal((fixed.match(/data-launchforge-motion/g) || []).length, 3); assert.equal((fixed.match(/new IntersectionObserver/g) || []).length, 1);
+  const forModel = ai.stripInjectedMotion(fixed);
+  assert.ok(!/data-launchforge-motion|lf-ready|lf-up/.test(forModel), 'the model never sees the runtime');
+  assert.equal(ai.finalizeGenerated(forModel, BRIEF), fixed, 'strip then finalize is a round trip: an edit cannot change the runtime');
+  assert.equal(ai.stripInjectedMotion('<p>plain</p>'), '<p>plain</p>');
+});
+test('motion runtime: nothing is hidden without JavaScript, a failing runtime reveals the page, reduced motion shows everything and makes scrolling instant, and a page without </body> still gets its script', () => {
   const html = ai.finalizeGenerated(page(), BRIEF);
-  assert.match(html, /if\(reduce\|\|!\('IntersectionObserver' in window\)\)/);
-  assert.match(html, /reveals\.forEach\(function\(el\)\{el\.classList\.add\('lf-in'\)\}\)/);
-  assert.match(html, /matchMedia&&window\.matchMedia\('\(prefers-reduced-motion: reduce\)'\)/);
+  assert.match(html, /r\.classList\.add\('lf-ready'\)/); assert.match(html, /setTimeout\(function\(\)\{r\.classList\.remove\('lf-ready'\)\},4000\)/); assert.match(html, /clearTimeout\(window\.__lfFailsafe\)/);
+  assert.match(html, /window\.matchMedia\('\(prefers-reduced-motion: reduce\)'\)\.matches/); assert.match(html, /behavior:'auto'/);
+  const noBody = ai.finalizeGenerated('<!DOCTYPE html><html lang="en"><head><title>t</title></head><h1>x</h1></html>', BRIEF);
+  assert.equal((noBody.match(/data-launchforge-motion/g) || []).length, 3); assert.ok(noBody.indexOf('data-lf-live') < noBody.lastIndexOf('</html>'));
 });
 // ---- the loop, with a scripted fake model
 const fakeModel = replies => { const calls = []; const fn = async c => { calls.push(c); const r = replies[Math.min(calls.length - 1, replies.length - 1)]; if (r instanceof Error) throw r; return typeof r === 'string' ? { text: r, finishReason: 'STOP' } : r; }; fn.calls = calls; return fn; };
@@ -444,7 +451,7 @@ test('generateSite: a model failure propagates to the caller (server.js maps it 
 // ======================================================================================================
 const FURNITURE = { name: 'Oakwell Atelier', type: 'other', style: 'Elegant', desc: 'Bespoke furniture and joinery studio in Bristol. We design and make tables, shelving and cabinetry to commission for homes and architects.', audience: 'Homeowners and architects', pages: [] };
 const FINTECH = { name: 'Ledgerly', type: 'other', style: 'Dark', desc: 'Invoicing and payments software for freelancers. Create invoices, track payments and see cash flow in one dashboard.', audience: 'Freelancers', pages: [] };
-// A page written the way the prompt asks (plan comment, hero stages, mixed reveals, animated menu, reduced motion). Verified in real Chromium at 1280, 390 and 360px; see the delivery notes.
+// A page written the way the prompt asks: plan comment, data-hero and data-reveal hooks only (no hero or reveal CSS/JS: LaunchForge adds those), animated menu, reduced motion. Verified in real Chromium at 1280, 390 and 360px after finalizeGenerated.
 const atelier = () => ai.cleanOutput(String.raw`<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <!-- design: concept=a monograph for a timber workshop, quiet, tactile, architectural; composition=asymmetric 12-column, plates bleed off the edge, each section a different layout; type=Playfair Display display against Inter small caps; palette=paper, stone, oak, brass rules, charcoal ink with one grain texture; sequence=object first, then the pieces, the making, the studio, the enquiry; imagery=layered illustrated plates with lighting gradient, grain and one line drawing each; motion=lines rise in the hero then copy, buttons and a masked plate; reveals vary by section, rules draw in -->
@@ -454,7 +461,7 @@ const atelier = () => ai.cleanOutput(String.raw`<!DOCTYPE html>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap">
 <style>
 :root{--ink:#201a15;--paper:#f4efe6;--stone:#e6ddcc;--oak:#6b4a2b;--brass:#a8782f;--brass-ink:#7a5416;--muted:#5a4e42;--font-heading:"Playfair Display",Georgia,"Times New Roman",serif;--font-body:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
---ease-out:cubic-bezier(0.22,1,0.36,1);--ease-in-out:cubic-bezier(0.65,0,0.35,1);--dur-fast:160ms;--dur-base:320ms;--dur-slow:720ms;--stagger:70ms;--rise:18px;--header:68px}
+--ease-out:cubic-bezier(0.22,1,0.36,1);--ease-in-out:cubic-bezier(0.65,0,0.35,1);--dur-fast:160ms;--dur-base:320ms;--header:68px}
 .defs{position:absolute}*{box-sizing:border-box}html{scroll-padding-top:var(--header)}
 body{margin:0;background:var(--paper);color:var(--ink);font:1.0625rem/1.65 var(--font-body)}
 h1,h2,h3{font-family:var(--font-heading);line-height:1.15;letter-spacing:-0.02em;margin:0;font-weight:600}
@@ -497,21 +504,10 @@ form{display:grid;gap:20px;max-width:560px;margin:32px auto 0;text-align:left}.f
 .ok{opacity:0;transform:translateY(6px);transition:opacity var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-out)}.ok.show{opacity:1;transform:none}.fine{font-size:.85rem;color:var(--muted)}
 .center{text-align:center}footer{padding:32px 0;border-top:1px solid var(--stone);font-size:.9rem}
 @media (min-width:861px){.hero{grid-template-columns:7fr 5fr}.mosaic{grid-template-columns:7fr 5fr;align-items:end}.mosaic .plate:nth-child(1){grid-row:span 2}.mosaic .plate:nth-child(3){grid-column:2}.split{grid-template-columns:4fr 8fr;gap:64px}.split .sticky{position:sticky;top:96px;align-self:start}.band .wrap{display:grid;grid-template-columns:2fr 5fr 1fr;gap:40px;align-items:start}}
-@keyframes hero-in{from{opacity:0;transform:translateY(var(--rise))}to{opacity:1;transform:none}}@keyframes line-up{from{transform:translateY(105%)}to{transform:none}}
-@keyframes plate-in{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0)}}@keyframes settle{from{transform:scale(1.06)}to{transform:none}}
-.line>span{animation:line-up var(--dur-slow) var(--ease-out) both}.line:nth-child(2)>span{animation-delay:var(--stagger)}
-[data-hero="2"],[data-hero="3"]{animation:hero-in var(--dur-slow) var(--ease-out) both}[data-hero="2"]{animation-delay:calc(var(--stagger) * 4)}[data-hero="3"]{animation-delay:calc(var(--stagger) * 6)}
-[data-hero="4"]{animation:plate-in var(--dur-slow) var(--ease-out) both;animation-delay:calc(var(--stagger) * 6)}[data-hero="4"] .art{animation:settle var(--dur-slow) var(--ease-out) both;animation-delay:calc(var(--stagger) * 6)}
-.js [data-reveal],.js [data-stagger]>*{opacity:0;transition:opacity var(--dur-slow) var(--ease-out),transform var(--dur-slow) var(--ease-out)}
-.js [data-reveal=rise],.js [data-stagger]>*{transform:translateY(var(--rise))}.js [data-stagger]>*{transition-delay:calc(var(--i,0) * var(--stagger))}
-.js [data-reveal=slide]{transform:translateX(24px)}.js [data-reveal=slide].from-left{transform:translateX(-24px)}
-.js [data-reveal=mask]{opacity:1}.js [data-reveal=mask] .art{clip-path:inset(0 0 100% 0);transform:scale(1.06);transition:clip-path var(--dur-slow) var(--ease-out),transform var(--dur-slow) var(--ease-out)}
-.js [data-reveal=lines]{opacity:1}.js [data-reveal=lines] .line>span{transform:translateY(105%);transition:transform var(--dur-slow) var(--ease-out)}
-.js [data-reveal=rule]{opacity:1;transform:scaleX(0);transform-origin:left}
-.js [data-reveal].in,.js [data-stagger].in>*{opacity:1;transform:none;clip-path:inset(0)}.js [data-reveal=mask].in .art{clip-path:inset(0);transform:none}.js [data-reveal=lines].in .line>span{transform:none}
-@media (max-width:600px){:root{--rise:12px;--dur-slow:500ms}}
-@media (prefers-reduced-motion:reduce){:root{--dur-fast:1ms;--dur-base:1ms;--dur-slow:1ms;--stagger:0ms;--rise:0px}[data-hero],[data-hero] .art,.line>span{animation:none}
-.js [data-reveal],.js [data-stagger]>*,.js [data-reveal] .art,.js [data-reveal] .line>span{opacity:1;transform:none;clip-path:none}html{scroll-behavior:auto}.panel a:hover::after{transition:none}}
+@keyframes line-up{from{transform:translateY(105%)}to{transform:none}}
+
+
+@media (prefers-reduced-motion:reduce){:root{--dur-fast:1ms;--dur-base:1ms}html{scroll-behavior:auto}.panel a:hover::after{transition:none}}
 </style></head>
 <body>
 <svg class="defs" width="0" height="0" aria-hidden="true" focusable="false"><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4"/><feColorMatrix values="0 0 0 0 .2  0 0 0 0 .13  0 0 0 0 .08  0 0 0 .18 0"/></filter></svg>
@@ -533,7 +529,7 @@ form{display:grid;gap:20px;max-width:560px;margin:32px auto 0;text-align:left}.f
 <figure class="plate" data-reveal="mask"><div class="art"><svg viewBox="0 0 400 400" role="img" aria-labelledby="t3"><title id="t3">Illustration of a cabinet</title><rect width="400" height="400" filter="url(#grain)"/><path d="M90 80h220v250H90zM200 80v250" fill="none" stroke="#3a2a1a" stroke-width="3"/></svg></div><figcaption>Illustration: cabinetry</figcaption></figure>
 <div data-reveal="slide"><p class="label">Tables, shelving, cabinetry</p><p>Each piece starts from a conversation about the room, the timber and how you live. These plates are illustrations of the kinds of work we take on, not photographs of finished pieces.</p></div></div></div></section>
 <section id="process" style="background:var(--stone)"><div class="wrap split"><div class="sticky" data-reveal="slide"><p class="label">02 / Process</p><h2>From sketch to installation</h2><p>One workshop, one thread from first drawing to final fitting.</p></div>
-<ol class="rail" data-stagger><li><b>I</b><div><h3>Sketch</h3><p>We listen, measure the space and draw the piece with you.</p></div></li><li><b>II</b><div><h3>Material</h3><p>Timber and hardware are chosen together, grain by grain.</p></div></li><li><b>III</b><div><h3>Make</h3><p>Joinery is cut and finished by hand in the workshop.</p></div></li><li><b>IV</b><div><h3>Install</h3><p>We deliver, fit and make the final adjustments in place.</p></div></li></ol></div></section>
+<ol class="rail"><li data-reveal="rise"><b>I</b><div><h3>Sketch</h3><p>We listen, measure the space and draw the piece with you.</p></div></li><li data-reveal="rise"><b>II</b><div><h3>Material</h3><p>Timber and hardware are chosen together, grain by grain.</p></div></li><li data-reveal="rise"><b>III</b><div><h3>Make</h3><p>Joinery is cut and finished by hand in the workshop.</p></div></li><li data-reveal="rise"><b>IV</b><div><h3>Install</h3><p>We deliver, fit and make the final adjustments in place.</p></div></li></ol></div></section>
 <section id="studio" class="band"><div class="wrap"><p class="label" data-reveal="rise">03 / Studio</p><h2 class="statement" data-reveal="rise">Slow, careful work, drawn and built by the same hands.</h2><p data-reveal="slide" class="from-left">Oakwell Atelier is a Bristol workshop making bespoke furniture and joinery for homes and architects.</p></div></section>
 <section id="enquire"><div class="wrap center"><p class="label" data-reveal="rule">04 / Enquire</p><h2 data-reveal="rise">Tell us what you would like made</h2><p style="margin-inline:auto" data-reveal="rise">Describe the piece and the room. We will reply with questions and a way to talk about a quote.</p>
 <form id="enquiry-form" novalidate><div class="field"><label for="n">Name</label><input id="n" required placeholder="Your name"></div><div class="field"><label for="e">Email</label><input id="e" type="email" required placeholder="Your email"></div><div class="field"><label for="m">Message</label><textarea id="m" rows="4" required placeholder="Your message"></textarea></div>
@@ -541,12 +537,9 @@ form{display:grid;gap:20px;max-width:560px;margin:32px auto 0;text-align:left}.f
 </main>
 <footer><div class="wrap">&copy; <span id="year"></span> Oakwell Atelier. Generated with LaunchForge. <a href="#home">Back to top</a></div></footer>
 <script>
-(function(){var d=document,root=d.documentElement;root.classList.add("js");
+(function(){var d=document,root=d.documentElement;
 var reduce=matchMedia("(prefers-reduced-motion: reduce)").matches,h=d.querySelector("header");
 var y=d.getElementById("year");if(y)y.textContent=new Date().getFullYear();
-[].forEach.call(d.querySelectorAll("[data-stagger]"),function(g){[].slice.call(g.children,0,5).forEach(function(c,i){c.style.setProperty("--i",i)})});
-var els=[].slice.call(d.querySelectorAll("[data-reveal],[data-stagger]"));
-if(reduce||!("IntersectionObserver" in window)){els.forEach(function(e){e.classList.add("in")})}else{var left=els.length,io=new IntersectionObserver(function(es){es.forEach(function(x){if(x.isIntersecting){x.target.classList.add("in");io.unobserve(x.target);if(--left===0)io.disconnect()}})},{threshold:.15,rootMargin:"0px 0px -8% 0px"});els.forEach(function(e){io.observe(e)})}
 var s=d.querySelector(".sentinel");if(s&&h&&!reduce&&"IntersectionObserver" in window){new IntersectionObserver(function(e){h.classList.toggle("scrolled",!e[0].isIntersecting)}).observe(s)}else if(h){h.classList.add("scrolled")}
 var b=d.querySelector(".menu"),p=d.getElementById("nav"),wide=matchMedia("(min-width: 861px)");
 function setMenu(o,back){h.classList.toggle("open",o);b.setAttribute("aria-expanded",String(o));b.setAttribute("aria-label",o?"Close menu":"Open menu");root.style.overflow=o?"hidden":"";if(o){var f=p.querySelector("a");if(f)f.focus()}else if(back){b.focus()}}
@@ -642,37 +635,43 @@ test('industry direction: furniture is editorial and image-led, fintech is preci
   for (const [b] of cases) assert.ok(!/\$\d|\bfrom £|testimonial(?!s)/i.test(ai.industryDirection(b).text.replace(/no testimonials/gi, '')), 'directions never push invented facts: ' + b.desc);
 });
 
-test('hero choreography: ordered CSS stages that run without JavaScript, checked on the markup and not just the selectors', () => {
-  const html = atelier();
-  assert.deepEqual(problemCodes(html).filter(c => c.startsWith('hero')), []);
-  const stages = [...html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/g, '').matchAll(/data-hero="(\d)"/g)].map(m => m[1]);
+test('hero choreography: the model marks stages, LaunchForge animates them in order, in one place, and anything the model writes for the hooks is flagged and discarded', () => {
+  const html = atelier(), fin = ai.finalizeGenerated(html, FURNITURE), c = css(fin), model = css(html);
+  assert.deepEqual(problemCodes(html).filter(x => ['hero', 'modelmotion', 'revealjs', 'staticjs'].includes(x)), []);
+  const stages = [...html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/g, '').matchAll(/data-hero="(\d)"/g)].map(x => x[1]);
   assert.deepEqual([...new Set(stages)].sort(), ['1', '2', '3', '4']);
-  const delay = n => { const m = css(html).match(new RegExp('\\[data-hero="' + n + '"\\]\\{[^}]*animation-delay:calc\\(var\\(--stagger\\) \\* (\\d+)\\)')); return m ? Number(m[1]) : 0; };
+  assert.ok(!/data-hero|data-reveal|\.revealed|heroRise/.test(model), 'the model\'s own CSS does not animate the hooks');
+  const delay = n => Number((c.match(new RegExp('\\[data-hero="' + n + '"\\]\\{--lf-d:(\\d+)ms')) || [])[1]);
   assert.ok(delay(2) > 0 && delay(2) < delay(3) && delay(3) <= delay(4), 'copy, then calls to action, then the visual');
-  assert.ok(delay(4) * 70 + 720 <= 1400, 'the whole sequence finishes within about 1.4 seconds');
-  assert.match(css(html), /@keyframes hero-in/); assert.match(css(html), /@keyframes line-up/); assert.match(css(html), /@keyframes plate-in/); assert.match(css(html), /@keyframes settle/);
-  // a generic page, a page whose hero stages exist only as CSS selectors, and a hero that waits for JavaScript are all flagged
+  assert.ok(delay(4) + Number(c.match(/lf-wipe (\d+)ms/)[1]) <= 1400, 'the whole sequence finishes within about 1.4 seconds');
+  assert.match(c, /html\.lf-ready \[data-hero="1"\] \.line>span\{display:block;animation:lf-line/);
+  // missing stages, stages that exist only as selectors, hero CSS or JS written by the model, a static js class
   assert.ok(problemCodes(page()).includes('hero'));
-  assert.ok(problemCodes(withHead('<style>@keyframes a{from{opacity:0}}[data-hero="1"],[data-hero="2"],[data-hero="3"]{animation:a 1s both}</style>')).includes('hero'), 'selectors alone are not markup');
-  assert.ok(problemCodes(html.replace('[data-hero="2"],[data-hero="3"]{', '.js [data-hero="2"],.js [data-hero="3"]{')).includes('herojs'));
+  assert.ok(problemCodes(withHead('<style>[data-hero="1"],[data-hero="2"],[data-hero="3"]{animation:a 1s both}</style>')).includes('hero'), 'selectors alone are not markup');
+  assert.ok(problemCodes(html.replace('</style>', '[data-hero="2"]{animation:x 1s}</style>')).includes('modelmotion'));
+  assert.ok(problemCodes(html.replace('</script>', 'document.querySelectorAll("[data-reveal]")</script>')).includes('revealjs'));
+  assert.ok(problemCodes(html.replace('<html lang="en">', '<html lang="en" class="js">').replace('</style>', '.js [data-reveal]{opacity:0}</style>')).includes('staticjs'));
   assert.ok(problemCodes(html.replace(/ data-hero="[234]"/g, '')).includes('hero'));
+  // what the model wrote anyway is discarded by finalizeGenerated, so the page has exactly one owner
+  const rival = html.replace('</style>', '.js [data-hero="4"]{clip-path:inset(0 0 100% 0);animation:mine 1s}@keyframes mine{to{opacity:1}}</style>');
+  assert.ok(!/mine|\.js \[data-hero/.test(ai.finalizeGenerated(rival, FURNITURE)));
 });
-test('contextual reveal variety: at least three treatments, grouped stagger only, and no hidden clip-path on the observed element', () => {
+test('contextual reveal variety: at least three treatments in the markup, masks never clip the observed element, and the one runtime staggers only what enters together', () => {
   const html = atelier(), markup = html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/g, '');
-  const kinds = [...markup.matchAll(/data-reveal="(\w+)"/g)].map(m => m[1]);
+  const kinds = [...markup.matchAll(/data-reveal="(\w+)"/g)].map(x => x[1]);
   assert.ok(new Set(kinds).size >= 3, 'treatments: ' + [...new Set(kinds)]);
   const top = Math.max(...[...new Set(kinds)].map(k => kinds.filter(x => x === k).length));
-  assert.ok(top / kinds.length <= 0.5, 'no single treatment for more than half of the reveals');
-  assert.ok((markup.match(/data-stagger/g) || []).length <= 4); assert.ok(!/style="--i:[5-9]/.test(markup.replace(/<nav[\s\S]*?<\/nav>/, '')), 'inline stagger indices are limited to the nav');
-  for (const need of [/\.js \[data-reveal=rise\]/, /translateX\(24px\)/, /clip-path:inset\(0 0 100% 0\)/, /\[data-reveal=rule\]\{[^}]*scaleX\(0\)/, /\[data-reveal=lines\] \.line>span\{transform:translateY\(105%\)/]) assert.match(css(html), need, String(need));
-  assert.ok(!/transition-delay:calc\(var\(--i,0\) \* var\(--stagger\)\)[^}]*\}[^{]*\.js \[data-reveal=rise\]/.test(css(html)));
-  assert.deepEqual(problemCodes(html).filter(c => ['reveal', 'stagger', 'maskobserved'].includes(c)), []);
-  // the old behaviour: every element is a .reveal with the same fade-up
-  const uniform = withHead('<style>.js .reveal{opacity:0;transform:translateY(16px);transition:opacity 600ms ease,transform 600ms ease}</style>', page('<div class="reveal">a</div><div class="reveal">b</div>'));
-  assert.ok(problemCodes(uniform).includes('reveal'));
+  assert.ok(top / kinds.length <= 0.6, 'no single treatment for most of the reveals');
+  assert.ok(!/data-stagger/.test(markup));
+  assert.deepEqual(problemCodes(html).filter(x => ['reveal', 'maskobserved'].includes(x)), []);
+  const c = css(ai.finalizeGenerated(html, FURNITURE));
+  for (const need of [/html\.lf-ready \[data-reveal="rise"\]:not\(\.lf-in\)\{opacity:0;transform:translate3d\(0,18px,0\)\}/, /html\.lf-ready \[data-reveal="slide"\]:not\(\.lf-in\)\{opacity:0;transform:translate3d\(-24px,0,0\)\}/, /html\.lf-ready \[data-reveal="mask"\]:not\(\.lf-in\) \[data-lf-media\]\{clip-path:inset\(0 0 100% 0\)/, /html\.lf-ready \[data-reveal="rule"\]:not\(\.lf-in\)\{transform:scaleX\(0\)/, /html\.lf-ready \[data-reveal="lines"\]:not\(\.lf-in\) \.line>span\{transform:translate3d\(0,105%,0\)\}/]) assert.match(c, need, String(need));
+  // the old behaviour: every element a .reveal with the same fade-up, or the observed element clipped
   assert.ok(problemCodes(page('<div data-reveal="rise"></div><div data-reveal="rise"></div><div data-reveal="rise"></div>')).includes('reveal'), 'one treatment repeated');
-  assert.ok(problemCodes(page('<div data-stagger></div>'.repeat(5))).includes('stagger'));
-  assert.ok(problemCodes(html.replace('.js [data-reveal=mask] .art{clip-path:inset(0 0 100% 0)', '.js [data-reveal=mask]{clip-path:inset(0 0 100% 0)}.js [data-reveal=mask] .art{x:y')).includes('maskobserved'));
+  assert.ok(problemCodes(html.replace('</style>', '.js [data-reveal="mask"]{clip-path:inset(0 0 100% 0)}</style>')).includes('maskobserved'));
+  assert.ok(problemCodes(withHead('<style>.js .reveal{opacity:0;transform:translateY(16px);transition:opacity 600ms ease}</style>', page('<div class="reveal">a</div>'))).includes('modelmotion'));
+  const legacy = ai.finalizeGenerated(withHead('<style>.js .reveal{opacity:0}.js .reveal.in{opacity:1}.card{padding:8px}</style>', page('<div class="reveal">a</div>')), BRIEF);
+  assert.ok(!/\.js \.reveal/.test(legacy) && /\.card\{padding:8px\}/.test(legacy), 'a legacy reveal system is removed, the rest of the CSS stays');
 });
 test('motion hygiene: one smooth-scroll owner, no transition: all, no animation libraries, no duplicate runtimes', () => {
   const html = atelier();
@@ -682,7 +681,8 @@ test('motion hygiene: one smooth-scroll owner, no transition: all, no animation 
   assert.ok(problemCodes(withHead('<style>html{scroll-behavior:smooth}</style>', page().replace("behavior:'smooth'", "behavior:\"smooth\""))).includes('smoothdup'), 'CSS and JS smooth scrolling together');
   assert.ok(problemCodes(page('<script>gsap.from(".a",{y:20})</script>')).includes('runtime')); assert.ok(problemCodes(page('<script>Lenis</script>')).includes('runtime'));
   assert.ok(problemCodes(page('<script>new IntersectionObserver(a);new IntersectionObserver(b);new IntersectionObserver(c)</script>')).includes('observers'));
-  assert.equal((html.match(/<script\b/g) || []).length, 1); assert.equal((html.match(/new IntersectionObserver/g) || []).length, 2);
+  assert.equal((html.match(/<script\b/g) || []).length, 1); assert.equal((html.match(/new IntersectionObserver/g) || []).length, 1, 'the page keeps only the header sentinel observer');
+  assert.equal((ai.finalizeGenerated(html, FURNITURE).match(/new IntersectionObserver/g) || []).length, 2, 'plus the one LaunchForge runtime observer: never a third');
   for (const lib of ['<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>', '<script src="https://unpkg.com/lenis@1/dist/lenis.min.js"></script>']) assert.match(ai.validateOutput(html.replace('</body>', lib + '</body>'), 150000), /External scripts/);
 });
 
@@ -699,12 +699,14 @@ test('navigation: desktop and mobile behaviour is required by the prompt and pre
   // the old behaviour (width-expanding underline, transition: all) is gone from the guidance
   const { system } = ai.buildGenerationPrompt(BRIEF); assert.ok(!/underline that grows from the left with transform: scaleX\(\) on hover\. On narrow/.test(system)); assert.ok(!/width-expanding/.test(system));
 });
-test('reduced motion: required by the prompt, checked in CSS and in the script, and the sample keeps everything visible', () => {
-  const html = atelier(), c = css(html);
+test('reduced motion: required by the prompt, checked in CSS and in the script, and both the page and the LaunchForge runtime keep everything visible', () => {
+  const html = atelier(), c = css(html), fin = ai.finalizeGenerated(html, FURNITURE), fc = css(fin);
   assert.deepEqual(ai.generationProblems(html, FURNITURE), []);
   const rm = c.slice(c.indexOf('@media (prefers-reduced-motion:reduce)'));
-  for (const re of [/--dur-fast:1ms;--dur-base:1ms;--dur-slow:1ms;--stagger:0ms;--rise:0px/, /\[data-hero\],\[data-hero\] \.art,\.line>span\{animation:none\}/, /\[data-reveal\] \.art[^}]*opacity:1;transform:none;clip-path:none/, /scroll-behavior:auto/]) assert.match(rm, re, String(re));
-  assert.match(html, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)\.matches/); assert.match(html, /if\(reduce\|\|!\("IntersectionObserver" in window\)\)\{els\.forEach\(function\(e\)\{e\.classList\.add\("in"\)\}\)\}/); assert.match(html, /behavior:reduce\?"auto":"smooth"/);
+  for (const re of [/--dur-fast:1ms;--dur-base:1ms/, /scroll-behavior:auto/]) assert.match(rm, re, String(re));
+  assert.match(html, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)\.matches/); assert.match(html, /behavior:reduce\?"auto":"smooth"/); assert.match(html, /!reduce&&"IntersectionObserver" in window/, 'the header observer is skipped under reduced motion');
+  // the runtime: never armed under reduced motion, scrolling made instant, and a CSS backstop that shows every hooked element
+  assert.match(fin, /if\(m\)\{var o=Element\.prototype\.scrollIntoView/); assert.match(fc, /@media \(prefers-reduced-motion:reduce\)\{html\{scroll-behavior:auto\}html\.lf-ready \[data-hero\],[^}]*animation:none!important;transition:none!important;opacity:1!important;transform:none!important;clip-path:none!important/);
   // motion without the media query, or an observer that ignores the preference, is reported (not critical, so the retry can fix it)
   const noMq = withHead('<style>@keyframes a{from{opacity:0}}.x{animation:a 1s}</style>');
   const r1 = ai.generationProblems(noMq, BRIEF).find(p => p.code === 'reducedcss'); assert.ok(r1 && r1.critical === false && /prefers-reduced-motion: reduce/.test(r1.message));
@@ -719,13 +721,13 @@ test('imagery: curated photography is permitted only through approved img src UR
 
   assert.match(system, /curated real photography/);
   assert.match(system, /Stock photography is atmosphere/);
-  assert.match(system, /never label stock imagery as a completed client project/);
-  assert.match(system, /exact PHOTO_LIBRARY URLs only/);
-  assert.match(system, /Use only exact library photo URLs inside img src/);
-  assert.match(system, /SVG is for purposeful illustration/);
-  assert.match(system, /label it "Illustration" or "Concept"/);
-  assert.match(prompt, /VERIFIED PHOTOGRAPHY LIBRARY/);
-  assert.ok(prompt.includes(approved), 'the exact cafe photo is supplied to Gemini');
+  assert.match(system, /Never label stock imagery as a completed client project or actual product/);
+  assert.match(system, /Never invent, alter, or substitute image URLs/);
+  assert.match(system, /Never put a library photo URL in CSS, SVG, a link, a script, or any attribute other than an approved image's src/);
+  assert.match(system, /use purposeful inline SVG, CSS composition, a diagram, or interface illustration/); assert.match(system, /never pretend illustration is photography/);
+  assert.match(system, /Label work-related illustrations "Illustration" or "Concept"/);
+  assert.match(system, /VERIFIED PHOTOGRAPHY LIBRARY/);
+  assert.ok(system.includes(approved), 'the exact cafe photo is supplied to Gemini');
 
   // A verified image URL is allowed in an img src.
   const good = `<img src="${approved}" alt="Cafe atmosphere">`;
@@ -784,7 +786,7 @@ test('generateSite: design advisories never cost a second call on their own, but
   const broken = page('<img src="https://images.unsplash.com/a.jpg" alt="">');
   const r2 = await run([broken, atelier()], { brief: FURNITURE });
   assert.equal(r2.ok, true); assert.equal(r2.attempts, 2); assert.equal(r2.advisory, undefined);
-  assert.match(r2.calls[1].prompt, /Unapproved external resources/); assert.match(r2.calls[1].prompt, /design plan as ONE HTML comment/); assert.match(r2.calls[1].prompt, /data-hero="1" \(headline\)/); assert.match(r2.calls[1].prompt, /at least three different scroll-reveal treatments/); assert.match(r2.calls[1].prompt, /Keep the same business, style, design plan and section structure/);
+  assert.match(r2.calls[1].prompt, /Unapproved external resources/); assert.match(r2.calls[1].prompt, /design plan as ONE HTML comment/); assert.match(r2.calls[1].prompt, /Mark the hero parts for LaunchForge's entrance animation/); assert.match(r2.calls[1].prompt, /at least three different scroll-reveal treatments/); assert.match(r2.calls[1].prompt, /Keep the same business, style, design plan and section structure/);
   const unsafe = page('<script>fetch("/x")</script>'), r3 = await run([unsafe, unsafe]);
   assert.equal(r3.ok, false); assert.equal(r3.html, undefined);
 });
