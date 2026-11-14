@@ -6,9 +6,10 @@ Website builder for freelancers. Frontend: `index.html` (GitHub Pages). Backend:
 | File | Purpose |
 |---|---|
 | `index.html` | The whole frontend. |
-| `server.js` | Express app: `/api/health`, `/api/auth/*`, `/api/projects/*`, `/api/edit` (Gemini). |
+| `server.js` | Express app: `/api/health`, `/api/auth/*`, `/api/projects/*`, `/api/edit` and `/api/generate` (Gemini). |
 | `auth.js`, `security.js`, `web.js` | Register/login/logout logic, Origin + CSRF checks, session and cookie wiring. |
 | `api.js`, `projects.js`, `store.js`, `users.js`, `passwords.js`, `db.js` | Project rules, Express wrapper, SQL, Argon2id hashing, connection. |
+| `site-ai.js` | AI website generation: brief validation, the design/copy prompt, quality and safety checks on the model's page, one automatic retry. No Express or network: unit-tested offline. |
 | `migrations/`, `migrate.js`, `scripts/` | Versioned SQL migrations and the operator scripts (`migrate`, `assign-legacy`). |
 | `test/` | Automated tests (`npm test`). |
 
@@ -39,6 +40,12 @@ npm run migrate -- --apply --confirm-host <host>   # applies it (to the DEV bran
 npm start                     # open http://localhost:3000
 ```
 Locally the page talks to your local server and cookies use `SameSite=Lax` over http. This does not prove production behaviour (see "Verify the real origins").
+
+## AI website generation
+Logged in with `GEMINI_API_KEY` set, **Generate with AI** writes a custom page for the business (`POST /api/generate`, about 30-90 seconds). Otherwise the page uses the instant quick template and says so. The route is protected like `/api/edit` (login + CSRF + Origin) and is rate limited per user (`GENERATE_RATE_PER_MINUTE`, default 3; `AI_GENERATE_TIMEOUT_MS`, default 150000). It only returns the page; saving still goes through `/api/projects`.
+- The model is told to use only facts from the description: no invented testimonials, statistics, prices, phone numbers, e-mail addresses or links, no external images/fonts, no network calls in the page script. `site-ai.js` checks every answer for those problems and for broken navigation anchors, retries once with the exact problems listed, and never returns a page with a critical problem (the browser then offers Try again or the quick template; the current site is never replaced on failure).
+- A page written by AI carries `<meta name="generator" content="LaunchForge AI">`; the editor uses it to label the page and to restore the right label after Undo.
+- Tests: `test/site-ai.test.js` (module, fake model), `test/generate-ui.test.js` (the page script in a simulated DOM), and the `/api/generate` tests in `test/http.test.js` (a fake model is injected through `deps.aiGenerate`; Gemini is never called).
 
 ## Social sign-in (Google, GitHub, Apple)
 Implemented but **off by default**: a provider is live only when its environment variables are set and the optional migration `003_oauth.sql` has been applied by you (`npm run migrate -- --with-optional --apply`; it is skipped by startup, `AUTO_MIGRATE` and a plain `--apply`). See **OAUTH.md** for the variables, provider-console steps, callback URLs, the safe procedure, what was and was not verified, and why "Forgot password" is not included. `npm run oauth:check` shows what is configured (no secret values are printed).

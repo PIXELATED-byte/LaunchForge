@@ -16,6 +16,7 @@ const { createAuthApi } = require('./auth');
 const { createOAuthApi } = require('./oauth');
 const { authenticate, makeOriginPolicy } = require('./security');
 const web = require('./web');
+const siteAi = require('./site-ai');
 
 const PORT = Number(process.env.PORT) || 3000;
 const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
@@ -55,9 +56,9 @@ function sessions(req, res, next) {
   }
   return sessionMw.middleware(req, res, next);
 }
-app.use(['/api/auth', '/api/projects', '/api/edit'], web.dbGate(deps), sessions);
+app.use(['/api/auth', '/api/projects', '/api/edit', '/api/generate'], web.dbGate(deps), sessions);
 
-// The Gemini route requires a logged-in user (and a valid CSRF token) before the body is even parsed.
+// The Gemini routes (/api/edit and /api/generate) require a logged-in user (and a valid CSRF token) before the body is even parsed.
 async function authGuard(req, res, next) {
   try {
     const a = await authenticate({ method: req.method, headers: req.headers, session: web.sessionAdapter(req), selfOrigin: req.protocol + '://' + req.get('host') }, { originPolicy });
@@ -69,7 +70,7 @@ async function authGuard(req, res, next) {
     return res.status(503).json({ error: { code: 'AUTH_UNAVAILABLE', message: 'Login is temporarily unavailable.' } });
   }
 }
-app.use('/api/edit', authGuard);
+app.use(['/api/edit', '/api/generate'], authGuard);
 
 // Social sign-in. These are browser navigations (not fetch calls), so they are plain GET routes; Apple answers with a cross-site form POST.
 // Their protection is the single-use `state` bound to the session (see oauth.js), not the Origin/CSRF-header rule used by the JSON API.
@@ -98,7 +99,7 @@ app.get('/.well-known/apple-developer-domain-association.txt', (req, res) => {
   return t ? res.type('text/plain').send(t) : res.status(404).end();
 });
 
-app.use('/api/auth', createRouter(createAuthApi(deps, { originPolicy }), web.sessionAdapter, { limit: '20kb', onClearSession: web.clearSessionCookie }));
+app.use('/api/auth', createRouter(createAuthApi(deps, { originPolicy, registerPerHour: Number(process.env.AUTH_REGISTER_PER_HOUR) || 10 }), web.sessionAdapter, { limit: '20kb', onClearSession: web.clearSessionCookie }));
 app.use('/api/projects', createRouter(createApi(() => deps.getStore(), { originPolicy }), web.sessionAdapter, { limit: '1200kb' }));
 
 app.use(express.json({ limit: '400kb' }));
@@ -126,51 +127,9 @@ function rateLimit(req, res, next) {
   next();
 }
 
-function cleanOutput(text) {
-  let t = String(text || '').trim();
-
-  t = t
-    .replace(/^```(?:html)?\s*/i, '')
-    .replace(/```\s*$/, '')
-    .trim();
-
-  const i = t.search(/<!doctype html|<html[\s>]/i);
-  if (i > 0) t = t.slice(i);
-
-  const end = t.toLowerCase().lastIndexOf('</html>');
-  if (end >= 0) t = t.slice(0, end + 7);
-
-  return t;
-}
-
-function validateOutput(t) {
-  if (!/^(<!doctype html|<html[\s>])/i.test(t) ||
-      !/<\/html>$/i.test(t)) {
-    return 'The AI did not return a complete HTML page.';
-  }
-
-  if (t.length > MAX_HTML * 2) {
-    return 'The AI returned a page that is too large.';
-  }
-
-  if (/<\s*(iframe|object|embed|base)\b/i.test(t)) {
-    return 'The AI returned disallowed elements.';
-  }
-
-  if (/<script\b[^>]*\bsrc\s*=/i.test(t)) {
-    return 'External scripts are not allowed.';
-  }
-
-  if (/<meta\b[^>]*http-equiv\s*=\s*["']?refresh/i.test(t)) {
-    return 'Page redirects are not allowed.';
-  }
-
-  if (/<form\b[^>]*\baction\s*=/i.test(t)) {
-    return 'Form submission targets are not allowed.';
-  }
-
-  return null;
-}
+// cleanOutput / validateOutput live in site-ai.js (shared by /api/edit and /api/generate, unit-tested there); behaviour is unchanged.
+const cleanOutput = siteAi.cleanOutput;
+const validateOutput = t => siteAi.validateOutput(t, MAX_HTML);
 
 const SYSTEM = `You are LaunchForge's website editing engine.
 
@@ -182,6 +141,7 @@ Do not use Markdown fences or explanations.
 Rules:
 - Apply the requested changes while preserving unrelated content.
 - Keep CSS and JavaScript inline.
+- Preserve LaunchForge motion markers (data-hero, data-reveal, data-stagger) and existing motion styles/scripts unless the user explicitly asks to change animation. Do not remove the LaunchForge motion runtime marker.
 - Do not add external scripts, iframes, objects, embeds, or base tags.
 - Keep the website responsive and accessible.
 - Keep forms as client-side demonstrations.
@@ -304,7 +264,10 @@ ${html.replace(/<\/website_html>/gi, '<\\/website_html>')}
       return fail(res, 502, 'AI_BAD_OUTPUT', problem);
     }
 
-    return res.json({ html: output, model: MODEL });
+    // Reinstall the canonical motion runtime after edits. This is idempotent and keeps
+    // animation execution reliable even if Gemini omits or accidentally removes it.
+    const edited = siteAi.finalizeGenerated(output, { name: context && context.name ? String(context.name).slice(0, 100) : 'Website' });
+    return res.json({ html: edited, model: MODEL });
 
   } catch (e) {
     if (e.name === 'AbortError') {
@@ -338,6 +301,86 @@ ${html.replace(/<\/website_html>/gi, '<\\/website_html>')}
     return fail(res, 502, 'AI_PROVIDER',
       'Gemini could not complete the request. Check your API configuration and try again.');
 
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+// ---- AI website generation: POST /api/generate. The business brief goes in, a complete tailored page comes out.
+// Protected like /api/edit: login + CSRF + Origin (authGuard, above), a per-user rate limit, an ownership check when a project is named,
+// and the page is validated (site-ai.js) before it is returned. The page is only returned to the browser; saving it still goes through /api/projects.
+// Tests can replace the model with deps.aiGenerate = async ({ system, prompt, attempt }) => ({ text, finishReason }).
+const genRatePerMinute = () => Number(process.env.GENERATE_RATE_PER_MINUTE) || 3;   // read per request so it can be tuned (and tested) without a restart
+const GEN_TIMEOUT_MS = Number(process.env.AI_GENERATE_TIMEOUT_MS) || 150000;
+const genHits = new Map();
+
+function genRateLimit(req, res, next) {
+  const now = Date.now();
+  const who = req.userId || req.ip;
+  const recent = (genHits.get(who) || []).filter(t => now - t < 60000);
+  if (recent.length >= genRatePerMinute()) {
+    return fail(res, 429, 'RATE_LIMIT', 'Too many website generations. Wait a minute and try again.');
+  }
+  recent.push(now);
+  genHits.set(who, recent);
+  next();
+}
+
+async function geminiGenerate({ system, prompt }) {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const r = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: { systemInstruction: system, maxOutputTokens: 16000, temperature: 0.7 }
+  });
+  const c = r.candidates && r.candidates[0];
+  return { text: r.text || '', finishReason: c && c.finishReason };
+}
+
+function sendAiError(res, e) {
+  if (e.name === 'AbortError') {
+    return fail(res, 504, 'AI_TIMEOUT', 'The AI took too long. Try again, or use the quick template.');
+  }
+  const status = e.status || e.statusCode;
+  console.error('Gemini generate failed:', { status: status || null, code: e.code || null });
+  if (status === 400 || status === 404) return fail(res, 502, 'AI_MODEL', 'Gemini rejected the request. Check the model name and API configuration.');
+  if (status === 401 || status === 403) return fail(res, 502, 'AI_AUTH', 'Gemini rejected the API key. Check your credentials and API access.');
+  if (status === 429) return fail(res, 429, 'AI_RATE_LIMIT', 'Gemini usage limits were reached. Check your quota and try again later.');
+  return fail(res, 502, 'AI_PROVIDER', 'Gemini could not complete the request. Check your API configuration and try again.');
+}
+
+app.post('/api/generate', genRateLimit, async (req, res) => {
+  if (!process.env.GEMINI_API_KEY) {
+    return fail(res, 503, 'NOT_CONFIGURED', 'GEMINI_API_KEY is missing from .env. Restart the server after configuring it.');
+  }
+  const body = req.body || {};
+  const { brief, error } = siteAi.normalizeBrief(body);
+  if (error) return fail(res, 400, error.code, error.message);
+
+  try {   // ownership: generating for a named project is only allowed for a project the caller owns
+    const denied = await authorizeEdit(deps.getStore(), req.userId, body.projectId);
+    if (denied) return fail(res, denied.status, denied.body.error.code, denied.body.error.message);
+  } catch (e) {
+    return fail(res, 503, 'DB_UNAVAILABLE', 'Server storage is temporarily unavailable.');
+  }
+
+  let timer;
+  try {
+    const result = await Promise.race([
+      siteAi.generateSite({ brief, callModel: deps.aiGenerate || geminiGenerate, maxHtml: MAX_HTML, deadline: Date.now() + GEN_TIMEOUT_MS }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Object.assign(new Error('Timed out'), { name: 'AbortError' })), GEN_TIMEOUT_MS);
+      })
+    ]);
+    if (!result.ok) {
+      // TEMPORARY LOCAL DIAGNOSTIC (generate:diag), remove after use. Why generation was refused: short codes and fixed check messages only
+      // (never the page, the prompt, the brief, keys or session data). Silent when NODE_ENV is "production".
+      if (process.env.NODE_ENV !== 'production') console.error('[generate:diag]', { code: result.code, problems: (result.problems || []).map(p => String(p).slice(0, 120)), attempts: result.attempts });
+      return fail(res, 502, result.code, result.message);
+    }
+    return res.json({ html: result.html, model: MODEL, attempts: result.attempts });
+  } catch (e) {
+    return sendAiError(res, e);
   } finally {
     clearTimeout(timer);
   }
