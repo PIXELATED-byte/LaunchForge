@@ -798,3 +798,506 @@ test('prompt budget: the richer system prompt stays within a size that leaves ro
   assert.match(ai.buildGenerationPrompt(BRIEF).system, /VERIFIED PHOTOGRAPHY LIBRARY/);
   assert.match(ai.buildGenerationPrompt(BRIEF).system, /photo-1554118811-1e0d58224f24/);
 });
+
+// ======================================================================================================
+// IMAGE INTELLIGENCE, PHASE 1: honest catalogue, category-specific photos, no repeats, validation on generate AND edit, preservation on /api/edit.
+// ======================================================================================================
+const ARCH = { name: 'Studio Nine', type: 'portfolio', style: 'Elegant', desc: 'Architecture studio showing residential projects and interior design concepts.', audience: 'Homeowners', pages: [] };
+const CONSULT = { name: 'Clear Advice', type: 'consulting', style: 'Modern', desc: 'Tax advice for small businesses.', audience: 'Owners', pages: [] };
+const urlsIn = cat => ai.PHOTO_CATALOG.filter(p => p.categories.includes(cat)).map(p => p.url);
+const img = (u, alt = '') => '<img src="' + u + '" alt="' + alt + '">';
+const wrong = (b, extra) => ai.generationProblems(page(extra), b).filter(p => p.code === 'wrongimage');
+const SHOE = urlsIn('retail')[0], CAFE = urlsIn('cafe'), ARCHPHOTO = urlsIn('architecture')[0];
+
+test('image catalogue: the same eight approved URLs, with metadata that is never guessed', () => {
+  assert.equal(ai.PHOTO_CATALOG.length, 8); assert.equal(new Set(ai.PHOTO_CATALOG.map(p => p.url)).size, 8);
+  for (const p of ai.PHOTO_CATALOG) {
+    assert.match(p.url, /^https:\/\/images\.unsplash\.com\/photo-[\w-]+\?w=1200&auto=format&fit=crop$/); assert.ok(p.url.includes(p.id));
+    assert.ok(Array.isArray(p.categories) && p.categories.length >= 1); assert.equal(Object.isFrozen(p), true);
+    assert.equal(p.confirmed, false, 'nothing is marked confirmed until a person has looked at the photo');
+    if (p.subject === null) assert.equal(p.evidence, null, 'no evidence is invented for an unknown subject'); else assert.ok(p.evidence && /Not inspected visually/.test(p.evidence), 'a known subject says where it came from');
+  }
+  // the URLs that were in the former PHOTO_LIBRARY (saved projects may contain them) stay valid
+  for (const u of ['https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=1200&auto=format&fit=crop', 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=1200&auto=format&fit=crop', 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=1200&auto=format&fit=crop'])
+    assert.ok(ai.PHOTO_CATALOG.some(p => p.url === u), u);
+  const todo = ai.photoLabelsToConfirm(); assert.equal(todo.length, 8);
+  assert.deepEqual(todo.filter(t => t.subject === null).length, 7); assert.ok(todo.every(t => Array.isArray(t.filedUnder) && 'evidence' in t));
+});
+test('category-specific images: the prompt offers only photos that suit the business', () => {
+  const sys = b => ai.buildGenerationPrompt(b).system, section = s => s.slice(s.indexOf('VERIFIED PHOTOGRAPHY LIBRARY'), s.indexOf('INDUSTRY DIRECTION'));
+  const cafe = section(sys(BRIEF)); for (const u of CAFE) assert.ok(cafe.includes(u)); for (const u of [...urlsIn('retail'), ...urlsIn('fitness'), ARCHPHOTO]) assert.ok(!cafe.includes(u), 'a cafe is not offered ' + u);
+  const arch = section(sys(ARCH)); assert.ok(arch.includes(ARCHPHOTO)); for (const u of [...urlsIn('retail'), ...urlsIn('cafe'), ...urlsIn('fitness')]) assert.ok(!arch.includes(u), 'an architecture portfolio is not offered ' + u);
+  assert.ok(!arch.includes('shoe') && !/Nike/i.test(sys(ARCH)));
+  const none = section(sys(CONSULT)); assert.match(none, /no approved photograph suits this kind of business/); assert.ok(!/images\.unsplash\.com/.test(none));
+  assert.match(section(sys(BRIEF)), /use each photo at most once/); assert.match(section(sys(BRIEF)), /"subject": "not confirmed"/, 'the model is told when a subject is not confirmed, not given an invented one');
+  assert.match(ai.buildGenerationPrompt(BRIEF).system, /Use each library photo at most once: when the library has fewer photos than image slots/); assert.match(ai.buildGenerationPrompt(BRIEF).system, /write neutral alt text that names only the kind of place or business/);
+  const ids = b => ai.photosForBrief(b).map(p => p.url);
+  assert.deepEqual(ids({ ...BRIEF, desc: 'Neighbourhood coffee shop' }).sort(), [...CAFE].sort(), 'a coffee shop is not retail');
+  assert.deepEqual(ids({ name: 'W', type: 'other', desc: 'Bespoke furniture and joinery workshop', audience: '' }), [ARCHPHOTO]);
+  assert.deepEqual(ids({ name: 'B', type: 'other', desc: 'Independent footwear boutique', audience: '' }).sort(), urlsIn('retail').sort());
+  assert.deepEqual(ids({ name: 'G', type: 'fitness', desc: 'Strength gym', audience: '' }), urlsIn('fitness'));
+  assert.deepEqual(ids(null), []); assert.deepEqual(ids({}), []); assert.deepEqual(ids({ type: 'cafe', desc: 5 }), CAFE);
+});
+test('irrelevant images are rejected on generation: an approved photo from another category is critical, with the allowed photos named', () => {
+  const p = wrong(ARCH, img(SHOE, 'Product')); assert.equal(p.length, 1); assert.equal(p[0].critical, true);
+  assert.ok(p[0].message.includes(SHOE) && p[0].message.includes(ARCHPHOTO), 'the retry is told what to remove and what to use');
+  assert.equal(wrong(ARCH, img(ARCHPHOTO, 'Architecture')).length, 0);
+  assert.equal(wrong(BRIEF, img(SHOE)).length, 1); assert.equal(wrong(BRIEF, img(CAFE[0])).length, 0);
+  assert.match(wrong(CONSULT, img(ARCHPHOTO))[0].message, /No approved photograph suits this kind of business/);
+  assert.equal(ai.generationProblems(page(img(SHOE)), ARCH).filter(x => x.critical).some(x => x.code === 'wrongimage'), true);
+  // invented or unapproved URLs are still rejected exactly as before
+  for (const bad of ['https://images.unsplash.com/photo-123456789?w=1200', 'https://images.pexels.com/photos/1/a.jpg', 'https://picsum.photos/800/600', SHOE.replace('w=1200', 'w=1300')])
+    assert.ok(critical(page(img(bad))).includes('external'), bad);
+  assert.ok(critical(page('<div style="background-image:url(' + ARCHPHOTO + ')"></div>')).includes('external'), 'approved URLs only as img src');
+});
+test('repeated images: flagged while suitable photos are unused, never when the library is exhausted, and the retry is told', async () => {
+  const twice = img(CAFE[0], 'A') + img(CAFE[0], 'B');
+  const r = ai.generationProblems(page(twice), BRIEF).find(p => p.code === 'repeatedimage'); assert.ok(r && r.critical === false && r.message.includes(CAFE[0]));
+  assert.ok(!ai.generationProblems(page(img(CAFE[0]) + img(CAFE[1]) + img(CAFE[2])), BRIEF).some(p => p.code === 'repeatedimage'), 'three different photos');
+  assert.ok(!ai.generationProblems(page(img(CAFE[0]) + img(CAFE[1]) + img(CAFE[2]) + img(CAFE[0])), BRIEF).some(p => p.code === 'repeatedimage'), 'all suitable photos already used: repeating is unavoidable');
+  assert.ok(!ai.generationProblems(page(img(ARCHPHOTO) + img(ARCHPHOTO)), { name: 'W', type: 'other', style: 'Modern', desc: 'Furniture workshop', audience: '', pages: [] }).some(p => p.code === 'repeatedimage'), 'a single suitable photo can only repeat');
+  assert.ok(ai.generationProblems(page(img(ARCHPHOTO) + img(ARCHPHOTO)), ARCH).some(p => p.code === 'repeatedimage'), 'the architecture portfolio has a second suitable photo');
+  assert.ok(!ai.generationProblems(page(img(CAFE[0])), BRIEF).some(p => p.code === 'repeatedimage'));
+  // the retry loop: an off-topic photo is critical, so the page is regenerated with the exact problem
+  const fixed = page(img(ARCHPHOTO, 'Architecture')), res = await run([page(img(SHOE, 'Product')), fixed], { brief: ARCH });
+  assert.equal(res.ok, true); assert.equal(res.attempts, 2); assert.match(res.calls[1].prompt, /These photos do not suit this business/);
+  const res2 = await run([page(img(SHOE)), page(img(SHOE))], { brief: ARCH }); assert.equal(res2.ok, false, 'an irrelevant photo is never accepted');
+});
+
+const BEFORE = (...imgs) => '<!DOCTYPE html><html><head><title>Studio Nine architecture</title></head><body><h1>Studio Nine</h1><p>Architecture and interiors.</p>' + imgs.join('') + '</body></html>';
+const problem = (before, after, ins = 'Make the heading bigger') => ai.editImageProblem(before, after, ins);
+test('AI edits preserve existing images: unchanged, swapped, invented and extra URLs are all caught unless replacement is requested', () => {
+  const b = BEFORE(img(ARCHPHOTO, 'Architecture'));
+  assert.equal(problem(b, b.replace('Studio Nine</h1>', 'Studio Nine!</h1>')), null, 'an edit that keeps the images is fine');
+  assert.equal(problem(b, b.replace(/<img[^>]*>/, ''))?.code, 'IMAGES_REMOVED', 'removing an image is no longer accepted silently (details in the element-preservation tests)');
+  const swapped = b.replace(ARCHPHOTO, urlsIn('retail')[0]);
+  for (const [bad, label] of [[swapped, 'swap for another approved photo'], [b.replace(ARCHPHOTO, 'https://images.unsplash.com/photo-999999999?w=1200'), 'invented URL'], [b + img(urlsIn('fitness')[0]), 'extra approved photo'], [b.replace('</body>', img('https://picsum.photos/1/1') + '</body>'), 'extra remote image'],
+    [b.replace(ARCHPHOTO, ARCHPHOTO.replace('w=1200', 'w=800')), 'query string changed'], [b.replace('</body>', '<img srcset="https://example.org/a.jpg 1x, https://example.org/b.jpg 2x" alt=""></body>'), 'srcset'],
+    [b.replace('</head>', '<style>.x{background:url("https://example.org/bg.png")}</style></head>'), 'CSS url()'], [b.replace('</body>', '<svg><image href="https://example.org/i.png"/></svg></body>'), 'SVG image'], [b.replace('</body>', '<video poster="https://example.org/p.jpg"></video></body>'), 'poster']]) {
+    const p = problem(b, bad); assert.ok(p && p.code === 'IMAGES_CHANGED', label); assert.match(p.message, /Your website was not changed/); assert.match(p.message, /replace the hero image/);
+  }
+  // existing URLs of ANY kind stay valid: older saved projects are not broken, and &amp; spelling does not matter
+  const legacy = BEFORE(img('https://example.org/legacy.jpg', 'Old'), '<img src="' + ARCHPHOTO.replace(/&/g, '&amp;') + '" alt="">');
+  assert.equal(problem(legacy, legacy.replace('Studio Nine</h1>', 'New</h1>')), null); assert.equal(problem(legacy, legacy.replace(/&amp;/g, '&')), null);
+  // local images are never external
+  assert.equal(problem(b, b.replace('</body>', '<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt=""><img src="img/local.png" alt=""></body>'))?.code, 'IMAGES_ADDED', 'a normal edit may no longer ADD a local or data image element (this assertion used to expect null; superseded by the Phase 1 review)');
+});
+test('explicit image replacement: requested in plain words, then only approved photos that suit the page, only as an image', () => {
+  const yes = ['Replace the hero image with something warmer', 'swap the photo in the gallery', 'Change the picture at the top', 'use a different image for the hero', 'Add a photo to the about section', 'I want a new image here', 'remove the photo', 'Replace images, and keep the text'];
+  const no = ['Make the heading bigger', 'Make the photo bigger', 'Change the heading above the photo', "Don't change the images", 'Do not replace the photo', 'Keep the image but change the title', 'Change the colour of the section next to the pictures', '', undefined];
+  for (const i of yes) assert.equal(ai.imageReplacementRequested(i), true, i); for (const i of no) assert.equal(ai.imageReplacementRequested(i), false, String(i));
+  const b = BEFORE(img(ARCHPHOTO, 'Architecture')), second = urlsIn('portfolio')[0];
+  // allowed: a photo that suits the page (its own categories, plus what its text says)
+  assert.equal(problem(b, b.replace(ARCHPHOTO, second), 'Replace the hero image')?.code, 'IMAGE_NOT_ALLOWED', 'without a business type, only what the page itself shows is inferred');
+  assert.equal(ai.editImageProblem(b, b.replace(ARCHPHOTO, second), 'Replace the hero image', { type: 'portfolio' }), null, 'the project type from the editor context widens the pool');
+  assert.equal(ai.editImagePolicy(b, 'Replace the hero image', { type: 'portfolio' }).photos.some(p => p.url === second), true);
+  // not allowed even when replacement is requested: another business's photo, an invented URL, an approved URL used outside an image
+  for (const [bad, label] of [[b.replace(ARCHPHOTO, SHOE), 'shoe on an architecture page'], [b.replace(ARCHPHOTO, 'https://images.unsplash.com/photo-999999999?w=1200'), 'invented'], [b.replace(ARCHPHOTO, 'https://images.pexels.com/photos/1/a.jpg'), 'other host'],
+    [b.replace('</head>', '<style>.x{background:url(' + second + ')}</style></head>'), 'approved URL in CSS']]) {
+    const p = problem(b, bad, 'Replace the hero image'); assert.ok(p && p.code === 'IMAGE_NOT_ALLOWED', label); assert.match(p.message, /Your website was not changed/);
+  }
+  const css2 = ai.editImageProblem(b, b.replace('</head>', '<style>.x{background:url(' + second + ')}</style></head>'), 'Replace the hero image', { type: 'portfolio' });
+  assert.equal(css2 && css2.code, 'IMAGE_NOT_ALLOWED', 'a suitable approved photo is still refused when it is used as a CSS background instead of an image');
+  assert.equal(ai.editImageProblem(b, b.replace('</body>', '<img src="' + second + '" alt=""></body>'), 'Add a photo', { type: 'portfolio' }), null, '...but fine as an image');
+  // the edit prompt gets the policy: nothing offered unless replacement is asked for, then only suitable photos
+  const none = ai.editImagePolicy(b, 'Make the heading bigger'); assert.equal(none.replace, false); assert.deepEqual(none.photos, []);
+  const pol = ai.editImagePolicy(b, 'Replace the hero image'); assert.equal(pol.replace, true);
+  assert.ok(pol.photos.some(p => p.url === ARCHPHOTO) && pol.photos.every(p => p.categories.some(c => ['architecture', 'portfolio'].includes(c))), 'only photos that suit the page');
+  assert.deepEqual(ai.editImagePolicy('<html><body>Plain page about tax advice</body></html>', 'Add a photo').photos, [], 'no suitable photo: the model is told to illustrate');
+  // a page with no approved photo but a topic the text names
+  assert.ok(ai.editImagePolicy(BEFORE(), 'Replace the image').photos.some(p => p.url === ARCHPHOTO));
+});
+test('/api/edit wiring: the image policy goes into the prompt and the image check runs after validateOutput and before finalizeGenerated', () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(src, /const baseHtml = siteAi\.stripInjectedMotion\(html\)/); assert.match(src, /const imagePolicy = siteAi\.editImagePolicy\(baseHtml, ins, context\)/); assert.match(src, /<image_policy>[\s\S]*<\/image_policy>/); assert.match(src, /Do not add, change or remove any image\./);
+  assert.match(src, /Keep every <img> element exactly as it is .* unless the <image_policy> block says the user asked to replace images\. Never invent an image URL\./);
+  const iBad = src.indexOf("fail(res, 502, 'AI_BAD_OUTPUT'"), iImg = src.indexOf('siteAi.editImageProblem(baseHtml, output, ins, context)'), iFin = src.indexOf('siteAi.finalizeGenerated(output');
+  assert.ok(iBad > 0 && iBad < iImg && iImg < iFin, 'order: validateOutput, then the image check, then finalizeGenerated');
+  assert.match(src, /fail\(res, 422, imageProblem\.code, imageProblem\.message\)/);
+  assert.match(src, /authorizeEdit\(deps\.getStore\(\), req\.userId, projectId\)/, 'authorization is untouched');
+});
+
+
+// ======================================================================================================
+// IMAGE PRESERVATION BY ELEMENT: every original <img> (and <picture> <source>) must survive an edit unchanged unless replacement was explicitly requested.
+// ======================================================================================================
+const GAL = urlsIn('cafe');   // three different approved photos
+const galleryPage = (extra = '') => '<!DOCTYPE html>\n<html lang="en"><head><title>Brightside Bakery cafe</title><style>.g img{border-radius:4px}</style><script>var tpl = \'<img src="https://example.org/in-script.jpg">\';</script></head>\n<body><h1>Brightside Bakery</h1><p>Fresh bread and coffee.</p>\n' +
+  '<section id="gallery" class="g"><h2>Gallery</h2>\n  <img src="' + GAL[0] + '" alt="Cafe atmosphere" loading="lazy" width="600" height="400" class="a">\n  <img src="' + GAL[1] + '" alt="Cafe seating" srcset="' + GAL[1] + ' 1x, ' + GAL[1] + ' 2x" sizes="50vw">\n  <img src="' + GAL[2] + '" alt="Cafe counter">\n</section>' + extra + '</body></html>';
+const pres = (b, a, ins) => ai.editImageProblem(b, a, ins || 'Make the heading bigger', { type: 'cafe' });
+test('element preservation: a normal text edit keeps every image element, whatever harmless formatting changes the model makes', () => {
+  const b = galleryPage();
+  assert.equal(pres(b, b.replace('Fresh bread and coffee.', 'Fresh bread, pastries and coffee every morning.')), null);
+  // formatting only: attribute order, quote style, case, whitespace and newlines, self-closing slashes, entities, an unquoted value, a changed class/style/reveal hook
+  const noisy = b.replace(/<img src="([^"]+)" alt="Cafe atmosphere" loading="lazy" width="600" height="400" class="a">/, (m, u) => "<IMG\n   WIDTH='600' ALT='Cafe   atmosphere'\n   height=400 LOADING=lazy\n   SRC='" + u.replace(/&/g, '&amp;') + "' class='b c' style='border-radius:8px' data-reveal='mask' />")
+    .replace(/srcset="([^"]+)" sizes="50vw"/, (m, v) => 'sizes=50vw srcset="  ' + v.replace(/, /g, ' ,\n   ') + '  "');
+  assert.notEqual(noisy, b); assert.equal(pres(b, noisy), null, 'harmless formatting differences are not changes');
+  // a ">" inside an attribute value does not end the tag early
+  const gt = '<img src="img/a.png" alt="Fish > chips" loading="lazy">'; assert.equal(pres(b + gt, (b + gt).replace('Fresh bread', 'Fresh sourdough')), null);
+  assert.equal(pres(b + gt, (b + gt).replace('chips" loading="lazy"', 'fries" loading="lazy"'))?.code, 'IMAGES_MODIFIED', 'the part after the > is still compared');
+  assert.equal(pres(b + gt, (b + gt).replace('loading="lazy">', 'loading="eager">'))?.code, 'IMAGES_MODIFIED', 'attributes after the > are still compared');
+  // tags that only look like images are not images: comments and scripts
+  assert.equal(pres(b, b.replace('</body>', '<!-- <img alt="unused" src="img/x.png"> --></body>')), null, 'a commented-out tag is not an image element');
+  assert.equal(pres(b, b.replace('</body>', '<!-- <img src="https://example.org/c.jpg"> --></body>'))?.code, 'IMAGES_CHANGED', 'the external-URL check still scans everything, comments included');
+  assert.equal(ai.imageElements(b).length, 3, 'the <img> text inside the page script is not an element');
+  // motion blocks LaunchForge adds or strips never count
+  assert.equal(pres(ai.finalizeGenerated(b, BRIEF), ai.stripInjectedMotion(ai.finalizeGenerated(b, BRIEF))), null);
+  // images inside a <picture> are preserved too, and so is the order-independence of identical ones
+  const pic = '<picture><source srcset="a.webp 1x, b.webp 2x" type="image/webp"><img src="' + GAL[0] + '" alt="X"></picture>';
+  assert.equal(pres(b + pic, (b + pic).replace('Fresh bread', 'Fresh sourdough')), null);
+  assert.match(pres(b + pic, (b + pic).replace('a.webp 1x', 'c.webp 1x'))?.code, /^IMAGES_(REMOVED|MODIFIED)$/, 'a <source> inside <picture> is an image element (a source has no src, so a new srcset reads as a replacement)');
+});
+test('element preservation: removing one image, a whole gallery, or replacing a remote image with a data/local one is rejected with a clear 422 message', () => {
+  const b = galleryPage(), all = /<img[^>]*>\s*/g;
+  const one = pres(b, b.replace(/\s*<img src="[^"]+" alt="Cafe counter">/, ''));
+  assert.equal(one.code, 'IMAGES_REMOVED'); assert.match(one.message, /removed or replaced 1 existing image: "Cafe counter"/); assert.match(one.message, /Your website was not changed/); assert.match(one.message, /replace the hero image/); assert.match(one.message, /remove the gallery photos/);
+  const gallery = pres(b, b.replace(/<section id="gallery"[\s\S]*<\/section>/, ''));
+  assert.equal(gallery.code, 'IMAGES_REMOVED'); assert.match(gallery.message, /removed or replaced 3 existing images/);
+  assert.equal(pres(b, b.replace(all, ''))?.code, 'IMAGES_REMOVED');
+  const many = galleryPage() .replace('</section>', '<img src="' + GAL[0] + '?x=1" alt="four"><img src="' + GAL[0] + '?x=2" alt="five"></section>');
+  assert.match(pres(many, many.replace(/<section id="gallery"[\s\S]*<\/section>/, '')).message, /and 2 more/, 'long lists are summarised');
+  // conversion to a data or local image, with no new remote URL, used to slip through
+  for (const [to, label] of [['data:image/gif;base64,R0lGODlhAQABAAAAACw=', 'data URI'], ['img/local.png', 'relative path'], ['/uploads/a.png', 'root path']]) {
+    const p = pres(b, b.replace('src="' + GAL[2] + '"', 'src="' + to + '"')); assert.equal(p?.code, 'IMAGES_REMOVED', label); assert.match(p.message, /"Cafe counter"/);
+  }
+  // an image swapped for an inline <svg> is a removal; so is a duplicate that loses one copy
+  assert.equal(pres(b, b.replace(/<img src="[^"]+" alt="Cafe counter">/, '<svg viewBox="0 0 1 1"><rect width="1" height="1"/></svg>'))?.code, 'IMAGES_REMOVED');
+  const twin = galleryPage('<img src="' + GAL[2] + '" alt="Cafe counter">'); assert.equal(pres(twin, twin.replace(/<img src="[^"]+" alt="Cafe counter">(?![\s\S]*<img src="[^"]+" alt="Cafe counter">)/, ''))?.code, 'IMAGES_REMOVED', 'two identical images need two in the result');
+  // the existing external-URL rules still come first and are unchanged
+  assert.equal(pres(b, b.replace(GAL[2], 'https://images.unsplash.com/photo-999999999?w=1200'))?.code, 'IMAGES_CHANGED');
+  assert.equal(pres(b, b.replace('</body>', '<img src="https://picsum.photos/1/1" alt=""></body>'))?.code, 'IMAGES_CHANGED');
+});
+test('element preservation: changing alt, srcset, sizes, dimensions, loading or any other attribute of an existing image is rejected; presentation hooks may change', () => {
+  const b = galleryPage();
+  const cases = [['alt', b.replace('alt="Cafe atmosphere"', 'alt="A barista pouring a latte"')], ['alt removed', b.replace(' alt="Cafe counter"', '')], ['empty alt', b.replace('alt="Cafe counter"', 'alt=""')], ['srcset', b.replace(GAL[1] + ' 2x', GAL[1] + ' 3x')], ['srcset removed', b.replace(/ srcset="[^"]+"/, '')], ['sizes', b.replace('sizes="50vw"', 'sizes="100vw"')], ['width', b.replace('width="600"', 'width="900"')],
+    ['loading', b.replace('loading="lazy"', 'loading="eager"')], ['new attribute', b.replace('alt="Cafe counter"', 'alt="Cafe counter" fetchpriority="high"')], ['title', b.replace('alt="Cafe counter"', 'alt="Cafe counter" title="x"')], ['query string', b.replace('src="' + GAL[2] + '"', 'src="' + GAL[2] + '&q=80"')]];
+  for (const [label, after] of cases) { assert.notEqual(after, b, label); const p = pres(b, after, 'Make the heading bigger'); assert.ok(p, label); assert.match(p.code, /^IMAGES_(MODIFIED|CHANGED|REMOVED)$/, label); assert.match(p.message, /Your website was not changed/, label); }
+  assert.equal(pres(b, cases[0][1]).code, 'IMAGES_MODIFIED'); assert.match(pres(b, cases[0][1]).message, /changed the attributes \(such as alt text, srcset or size\) of 1 existing image: "Cafe atmosphere"/);
+  assert.equal(pres(b, cases[3][1]).code, 'IMAGES_MODIFIED');
+  // only presentation hooks are exempt, and the set is explicit
+  assert.deepEqual([...ai.IMAGE_PRESENTATION_ATTRS].sort(), ['class', 'data-hero', 'data-reveal', 'style']);
+  assert.equal(pres(b, b.replace('class="a"', 'class="a rounded"').replace('alt="Cafe seating"', 'alt="Cafe seating" style="filter:none" data-reveal="slide"')), null, 'restyling images is an ordinary edit');
+});
+test('element preservation: explicit replacement permits intentional image changes but keeps enforcing approved URLs, suitable categories and image-only sources', () => {
+  const b = galleryPage(), ok = (before, after, ins) => ai.editImageProblem(before, after, ins, { type: 'cafe' });
+  // intentional changes are permitted: replace, remove one, remove the gallery, replace with a data image
+  assert.equal(ok(b, b.replace('alt="Cafe counter"', 'alt="New"'), 'Replace the counter photo with a new picture'), null);
+  assert.equal(ok(b, b.replace(/\s*<img src="[^"]+" alt="Cafe counter">/, ''), 'Remove the counter photo'), null);
+  assert.equal(ok(b, b.replace(/<section id="gallery"[\s\S]*<\/section>/, ''), 'Remove the gallery'), null, 'naming the gallery with a removal verb is an explicit request');
+  assert.equal(ok(b, b.replace('src="' + GAL[2] + '"', 'src="data:image/gif;base64,R0lGODlhAQABAAAAACw="'), 'Replace the photo with a simple graphic')?.code, 'IMAGE_NOT_ALLOWED', 'explicit replacement may not use a data image (used to expect null; superseded by the Phase 1 review)');
+  // a suitable approved photo that is not on the page yet, used as an image, is allowed
+  const lone = '<!DOCTYPE html><html><head><title>Brightside Bakery cafe</title></head><body><h1>Hello</h1><img src="' + GAL[0] + '" alt="Cafe atmosphere"></body></html>', SUITABLE = GAL[1], ask = 'Replace the first photo';
+  assert.equal(ok(lone, lone.replace(GAL[0], SUITABLE), ask), null);
+  // still rejected during an explicit replacement
+  const X = after => ok(lone, after, ask), swap = u => lone.replace('src="' + GAL[0] + '"', 'src="' + u + '"');
+  for (const [label, after] of [['arbitrary remote URL', swap('https://example.org/x.jpg')], ['invented approved-looking id', swap('https://images.unsplash.com/photo-999999999?w=1200&auto=format&fit=crop')], ['another business\'s photo', swap(urlsIn('retail')[0])], ['other host', swap('https://images.pexels.com/photos/1/a.jpg')],
+    ['CSS background', lone.replace('</head>', '<style>.h{background:url(' + SUITABLE + ')}</style></head>')], ['approved URL only in srcset', lone.replace('alt="Cafe atmosphere"', 'alt="Cafe atmosphere" srcset="' + SUITABLE + ' 1x"')],
+    ['approved URL in a picture source', lone.replace('</body>', '<picture><source srcset="' + SUITABLE + '"><img src="' + GAL[0] + '" alt="a"></picture></body>')], ['SVG image', lone.replace('</body>', '<svg><image href="' + SUITABLE + '"/></svg></body>')], ['video poster', lone.replace('</body>', '<video poster="' + SUITABLE + '"></video></body>')],
+    ['unapproved srcset host', lone.replace('alt="Cafe atmosphere"', 'alt="Cafe atmosphere" srcset="https://example.org/a.jpg 1x"')]]) {
+    const p = X(after); assert.ok(p && p.code === 'IMAGE_NOT_ALLOWED', label); assert.match(p.message, /Your website was not changed/, label);
+  }
+  // without permission the same bypass attempts are IMAGES_CHANGED, as before
+  assert.equal(ai.editImageProblem(lone, lone.replace('</head>', '<style>.h{background:url(' + SUITABLE + ')}</style></head>'), 'Make the heading bigger', { type: 'cafe' })?.code, 'IMAGES_CHANGED');
+});
+test('element preservation: the check is a pure comparison, it never rewrites or restores HTML, and the API wiring still rejects with 422', () => {
+  const b = galleryPage(), after = b.replace(/\s*<img src="[^"]+" alt="Cafe counter">/, '');
+  const p = ai.editImageProblem(b, after, 'Make the heading bigger', { type: 'cafe' }); assert.deepEqual(Object.keys(p).sort(), ['code', 'message']);
+  assert.equal(ai.imagePreservationProblem(b, b), null); assert.equal(ai.imagePreservationProblem('<p>no images</p>', '<p>no images</p><img src="img/new.png" alt="">')?.code, 'IMAGES_ADDED', 'even a page without images may not gain an image element in a normal edit (used to expect null)');
+  assert.deepEqual(ai.imageElements('<p>x</p>'), []);
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(src, /fail\(res, 422, imageProblem\.code, imageProblem\.message\)/); assert.match(src, /authorizeEdit\(deps\.getStore\(\), req\.userId, projectId\)/);
+  const site = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'site-ai.js'), 'utf8'); const body = name => { const i = site.indexOf('function ' + name); return site.slice(i, site.indexOf('\n}\n', i)); }, fn = body('imagePreservationProblem') + body('explicitImageProblem') + body('editImageProblem');
+  assert.ok(!/\.replace\(|\.html|return\s+after/.test(fn.replace(/describeImages|\.replace\(\/\\s/g, '')), 'no HTML rewriting in the preservation check');
+});
+
+// ======================================================================================================
+// PHASE 1 REVIEW FIXES: no added image elements in normal edits, approved-only explicit replacement, a pool that is not contaminated by existing photos, clause-level intent.
+// ======================================================================================================
+const RETAIL = urlsIn('retail'), ARCH_PAGE = (...imgs) => BEFORE(...imgs);
+const adds = (before, after, ins = 'Make the heading bigger', ctx = { type: 'cafe' }) => ai.editImageProblem(before, after, ins, ctx);
+test('normal edits cannot add image elements: data, blob, relative, missing-source and picture-source images are all IMAGES_ADDED', () => {
+  const b = galleryPage(), ins = (html) => b.replace('</body>', html + '</body>');
+  const cases = [['data URI', '<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">'], ['relative path', '<img src="img/new.png" alt="New">'], ['root-relative path', '<img src="/uploads/new.png" alt="">'], ['blob URL', '<img src="blob:https://example.org/1234" alt="">'],
+    ['no src at all', '<img alt="Decorative">'], ['empty src', '<img src="" alt="">'], ['srcset only', '<img srcset="img/a.png 1x" alt="">'], ['data-src (lazy placeholder)', '<img data-src="img/a.png" alt="">'], ['picture with local source', '<picture><source srcset="img/a.webp"></picture>'], ['uppercase tag', '<IMG SRC=img/a.png>'], ['self-closing', '<img src="img/a.png"/>']];
+  for (const [label, html] of cases) { const p = adds(b, ins(html)); assert.ok(p, label); assert.equal(p.code, 'IMAGES_ADDED', label); assert.match(p.message, /Your website was not changed/, label); assert.match(p.message, /explicitly ask for them/, label); }
+  assert.match(adds(b, ins('<img src="img/a.png"><img alt="x">')).message, /added 2 new images/);
+  // it is the same on a page that has no images at all
+  const bare = '<!DOCTYPE html><html><head><title>Plain</title></head><body><h1>Plain page</h1></body></html>';
+  for (const [label, html] of cases.slice(0, 5)) assert.equal(adds(bare, bare.replace('</body>', html + '</body>'))?.code, 'IMAGES_ADDED', 'no images before: ' + label);
+  // what is still an ordinary edit: the originals untouched, text changes, restyling, a tag that is only text in a comment/script, a decorative CSS data texture
+  assert.equal(adds(b, b.replace('Fresh bread', 'Fresh sourdough')), null);
+  assert.equal(adds(b, ins('<!-- <img src="img/c.png"> --><script>var s = \'<img src="img/d.png">\'</script>')), null);
+  assert.equal(adds(b, ins('<style>.t{background-image:url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27/>")}</style>')), null, 'decorative CSS textures are not image elements');
+  // a rewritten original is still reported as removed/modified, not as an addition
+  assert.equal(adds(b, b.replace('src="' + GAL[2] + '"', 'src="img/local.png"'))?.code, 'IMAGES_REMOVED');
+  assert.equal(adds(b, b.replace('alt="Cafe counter"', 'alt="Changed"'))?.code, 'IMAGES_MODIFIED');
+});
+test('explicit replacement permits only approved, suitable catalogue URLs as <img src>: data, blob, relative, remote, CSS, SVG, poster and source images are rejected', () => {
+  const lone = '<!DOCTYPE html><html><head><title>Brightside Bakery cafe</title></head><body><h1>Hello</h1><img src="' + GAL[0] + '" alt="Cafe atmosphere"></body></html>', ask = 'Replace the first photo', SUIT = GAL[1];
+  const X = (after, ins = ask) => adds(lone, after, ins), swap = u => lone.replace('src="' + GAL[0] + '"', 'src="' + u + '"'), add = html => lone.replace('</body>', html + '</body>');
+  assert.equal(X(swap(SUIT)), null, 'an approved photo that suits the cafe, as <img src>');
+  assert.equal(X(add('<img src="' + SUIT + '" alt="Seating">'), 'Add a photo of the seating'), null, 'adding an approved suitable photo when asked');
+  assert.equal(X(swap(SUIT).replace('alt="Cafe atmosphere"', 'alt="Warm light" loading="lazy"')), null, 'other attributes of a new approved image are fine');
+  const bad = [['data URI', swap('data:image/gif;base64,R0lGODlhAQABAAAAACw=')], ['relative path', swap('img/local.png')], ['root-relative path', swap('/uploads/a.png')], ['blob URL', swap('blob:https://example.org/1')], ['arbitrary external URL', swap('https://example.org/x.jpg')],
+    ['invented library-looking URL', swap('https://images.unsplash.com/photo-999999999?w=1200&auto=format&fit=crop')], ['other image host', swap('https://images.pexels.com/photos/1/a.jpg')], ['another business\'s approved photo', swap(RETAIL[0])],
+    ['no src', lone.replace(/ src="[^"]+"/, '')], ['added data image', add('<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">')], ['added relative image', add('<img src="img/a.png" alt="">')], ['added image without src', add('<img alt="x">')],
+    ['srcset on a new image', swap(SUIT).replace('alt="Cafe atmosphere"', 'alt="a" srcset="' + SUIT + ' 1x"')], ['approved URL only in srcset', lone.replace('alt="Cafe atmosphere"', 'alt="Cafe atmosphere" srcset="' + SUIT + ' 1x"')],
+    ['approved URL in a picture source', add('<picture><source srcset="' + SUIT + '"><img src="' + GAL[0] + '" alt="b"></picture>')], ['local picture source', add('<picture><source srcset="img/a.webp"></picture>')],
+    ['CSS background (approved URL)', lone.replace('</head>', '<style>.h{background:url(' + SUIT + ')}</style></head>')], ['CSS background (data URI)', lone.replace('</head>', '<style>.h{background:url("data:image/png;base64,AAAA")}</style></head>')],
+    ['CSS background (relative)', lone.replace('</head>', '<style>.h{background-image:url(img/bg.png)}</style></head>')], ['CSS background (external)', lone.replace('</head>', '<style>.h{background:url(https://example.org/bg.png)}</style></head>')], ['inline style background', add('<div style="background:url(img/x.png)"></div>')],
+    ['SVG image (data)', add('<svg><image href="data:image/png;base64,AAAA"/></svg>')], ['SVG image (approved)', add('<svg><image href="' + SUIT + '"/></svg>')], ['video poster', add('<video poster="img/p.jpg"></video>')], ['input type=image', add('<input type="image" src="img/b.png">')]];
+  for (const [label, after] of bad) { const p = X(after); assert.ok(p, label); assert.equal(p.code, 'IMAGE_NOT_ALLOWED', label); assert.match(p.message, /Only approved library photos that suit the website are allowed/, label); assert.match(p.message, /Your website was not changed/, label); }
+  assert.equal(adds(lone, lone.replace('</head>', '<style>.u{fill:url(#grad)}</style></head>'), ask), null, '#fragment references are not images');
+  assert.match(X(swap('data:image/gif;base64,R0lGODlhAQABAAAAACw=')).message, /inline data image/);
+});
+test('explicit replacement: originals disappear only when removal is asked for, or when each one is replaced', () => {
+  const b = galleryPage(), ctx = { type: 'cafe' }, run3 = (after, ins) => ai.editImageProblem(b, after, ins, ctx);
+  const without = re => b.replace(re, ''), noCounter = /\s*<img src="[^"]+" alt="Cafe counter">/, noGallery = /<section id="gallery"[\s\S]*<\/section>/;
+  assert.equal(ai.imageRemovalRequested('Remove the counter photo'), true); assert.equal(ai.imageRemovalRequested('Remove the gallery'), true); assert.equal(ai.imageRemovalRequested('Replace the counter photo'), false); assert.equal(ai.imageRemovalRequested('Add a photo'), false);
+  // removal asked for: allowed
+  assert.equal(run3(without(noCounter), 'Remove the counter photo'), null); assert.equal(run3(without(noGallery), 'Remove the gallery'), null); assert.equal(run3(without(noGallery), 'Delete all the gallery photos'), null);
+  // replacement asked for, but nothing replaces what disappeared: rejected, with a clear message
+  const p = run3(without(noCounter), 'Replace the counter photo'); assert.equal(p.code, 'IMAGES_REMOVED'); assert.match(p.message, /removed 1 existing image without replacing it/); assert.match(p.message, /remove the gallery photos/);
+  assert.equal(run3(without(noGallery), 'Replace the first photo')?.code, 'IMAGES_REMOVED', 'removing a whole gallery while replacing one photo');
+  assert.equal(run3(without(noGallery), 'Add a photo of the seating')?.code, 'IMAGES_REMOVED');
+  // each removed original replaced by an approved photo is a replacement
+  assert.equal(run3(b.replace('alt="Cafe counter"', 'alt="New counter"'), 'Replace the counter photo'), null);
+  // a removal request still cannot smuggle in an unapproved image
+  assert.equal(run3(without(noCounter).replace('</body>', '<img src="img/a.png" alt=""></body>'), 'Remove the counter photo')?.code, 'IMAGE_NOT_ALLOWED');
+  assert.equal(ai.editImagePolicy(b, 'Remove the counter photo', ctx).remove, true); assert.equal(ai.editImagePolicy(b, 'Replace the counter photo', ctx).remove, false);
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(src, /Removing the images the user named is allowed\./); assert.match(src, /Every image you remove must be replaced by an approved photo/);
+});
+test('replacement pool: existing photos on the page never make their own category eligible; context and visible text decide, and no context means no photos', () => {
+  const urls = (html, ctx) => ai.editImagePolicy(html, 'Replace the hero image', ctx).photos.map(p => p.url);
+  // an architecture website that already contains an irrelevant retail photo
+  const arch = ARCH_PAGE(img(ARCHPHOTO, 'Architecture'), img(RETAIL[0], 'Product'));
+  for (const ctx of [undefined, { type: 'portfolio' }, { type: 'portfolio', name: 'Studio Nine' }]) {
+    const pool = urls(arch, ctx); assert.ok(pool.includes(ARCHPHOTO), 'suitable photos stay available'); for (const u of RETAIL) assert.ok(!pool.includes(u), 'the retail photo on the page did not make retail eligible: ' + JSON.stringify(ctx));
+  }
+  assert.deepEqual(ai.photosForHtml(arch, { type: 'portfolio' }).map(p => p.categories).flat().filter(c => c === 'retail'), []);
+  // replacing with another retail photo is rejected, replacing the retail photo with a suitable one is allowed, and the unchanged retail original may stay
+  assert.equal(ai.editImageProblem(arch, arch.replace(RETAIL[0], RETAIL[1]), 'Replace the second photo', { type: 'portfolio' })?.code, 'IMAGE_NOT_ALLOWED');
+  assert.equal(ai.editImageProblem(arch, arch.replace(ARCHPHOTO, RETAIL[1]), 'Replace the hero image', { type: 'portfolio' })?.code, 'IMAGE_NOT_ALLOWED');
+  const PORTFOLIO = urlsIn('portfolio')[0];   // an approved suitable photo that is NOT already on the page (the architecture photo is, so reusing it is a duplicate: see the unique-photo tests)
+  assert.equal(ai.editImageProblem(arch, arch.replace('<img src="' + RETAIL[0] + '" alt="Product">', '<img src="' + PORTFOLIO + '" alt="Interior">'), 'Replace the product photo', { type: 'portfolio' }), null);
+  assert.equal(ai.editImageProblem(arch, arch.replace('<img src="' + RETAIL[0] + '" alt="Product">', '<img src="' + ARCHPHOTO + '" alt="Interior">'), 'Replace the product photo', { type: 'portfolio' })?.code, 'IMAGE_DUPLICATE', 'the architecture photo is already on the page (this assertion used to expect null; superseded by the unique-photo rule)');
+  assert.equal(ai.editImageProblem(arch, arch.replace('Architecture and interiors.', 'Architecture and interiors, designed with care.'), 'Make the text warmer'), null, 'the irrelevant photo already on the page is preserved, not removed');
+  // not enough context: only a retail photo on the page and nothing that names a business category
+  const tax = '<!DOCTYPE html><html><head><title>Clear Advice</title></head><body><h1>Tax advice</h1><p>Plain help for small businesses.</p>' + img(RETAIL[0], 'Product') + '</body></html>';
+  assert.deepEqual(urls(tax, undefined), []); assert.deepEqual(urls(tax, { type: 'consulting' }), []); assert.deepEqual(urls(tax, { type: 'other', name: 'Clear Advice' }), []);
+  assert.equal(ai.editImageProblem(tax, tax.replace(RETAIL[0], CAFE[0]), 'Replace the photo', { type: 'consulting' })?.code, 'IMAGE_NOT_ALLOWED', 'with an empty pool even an approved photo is refused');
+  assert.equal(ai.editImageProblem(tax, tax.replace(RETAIL[0], RETAIL[1]), 'Replace the photo', { type: 'consulting' })?.code, 'IMAGE_NOT_ALLOWED');
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'server.js'), 'utf8'); assert.match(src, /none, so use inline SVG or CSS illustration/, 'the model is told to illustrate when no photo is available');
+  // trusted context and visible text still work
+  assert.deepEqual(urls('<html><body><p>Hello</p></body></html>', { type: 'fitness' }), urlsIn('fitness')); assert.deepEqual(urls('<html><body><p>Our gym and yoga classes</p></body></html>', undefined), urlsIn('fitness'));
+  assert.deepEqual(urls('<html><body></body></html>', { type: 'other', name: 'Harbour Coffee Roasters' }), urlsIn('cafe'));
+  assert.deepEqual(ai.photosForHtml('<p>x</p>', 'cafe').map(p => p.url), urlsIn('cafe'), 'a plain type string is still accepted');
+});
+test('intent detection: negated instructions keep images, a genuine request in another sentence or clause still works', () => {
+  const R = ai.imageReplacementRequested, D = ai.imageRemovalRequested;
+  for (const i of ["Don't change the images", 'Do not replace the photos', "Please don't swap the pictures", 'Never change the gallery photos', 'Without changing the photos, make the heading bigger', 'I do not want to remove the gallery', "Don't touch the images."]) assert.equal(R(i), false, i);
+  for (const i of ["Don't change the images. Replace the hero image with a new one.", "Do not change the photos! Swap the first picture for another one", 'Keep the logo. Don\'t replace the gallery photos.\nAdd a photo of the interior.', "Don't change the gallery photos, but replace the hero image", "Do not replace the photos; add a new image to the about section", "Don't touch the heading, and replace the banner photo"])
+    assert.equal(R(i), true, i);
+  assert.equal(R("Don't change the gallery photos, but make the heading bigger"), false); assert.equal(R("Don't replace the hero image but change the colour of the title"), false);
+  assert.equal(D("Do not remove the gallery"), false); assert.equal(D("Don't delete the photos. Remove the gallery."), true); assert.equal(D("Remove the gallery photos, but don't touch the hero image"), true);
+  // through the API check: a negated instruction preserves images, the separate genuine request authorises an approved replacement
+  const lone = '<!DOCTYPE html><html><head><title>Brightside Bakery cafe</title></head><body><h1>Hello</h1><img src="' + GAL[0] + '" alt="Cafe atmosphere"></body></html>', swapped = lone.replace(GAL[0], GAL[1]);
+  assert.match(adds(lone, swapped, "Don't change the images")?.code, /^IMAGES_/); assert.match(adds(lone, swapped, "Don't change the images, just make the heading bigger")?.code, /^IMAGES_/);
+  assert.equal(adds(lone, swapped, "Don't change the images. Replace the hero image."), null); assert.equal(adds(lone, swapped, "Don't change the heading, but replace the hero image"), null);
+  assert.equal(ai.editImagePolicy(lone, "Don't change the images", { type: 'cafe' }).photos.length, 0); assert.ok(ai.editImagePolicy(lone, "Don't change the images. Replace the hero image.", { type: 'cafe' }).photos.length > 0);
+  assert.equal(R(undefined), false); assert.equal(R(''), false); assert.equal(D(null), false);
+});
+
+// ======================================================================================================
+// PHASE 1 FINAL: one photo per place, illustration vs photo, clause-level intent, no image through any other door, removal scope, and the /api/edit route itself.
+// ======================================================================================================
+const LEG = n => 'https://example.org/legacy-' + n + '.jpg';   // legacy remote images already on a page always stay valid
+const SITE = ({ hero = '<img data-hero="4" src="' + GAL[0] + '" alt="Cafe atmosphere">', head = '', gallery } = {}) => '<!DOCTYPE html><html lang="en"><head><title>Brightside Bakery cafe</title><style>.t{background:linear-gradient(#fff,#eee)}</style>' + head + '</head><body><header><h1>Brightside Bakery</h1></header>' +
+  '<section id="home" class="hero">' + hero + '<p>Fresh bread and coffee.</p></section>' +
+  '<section id="services"><h2>Our services</h2><img src="' + LEG(1) + '" alt="Catering table"><img src="' + LEG(2) + '" alt="Wedding cakes"></section>' +
+  (gallery ?? '<section id="gallery"><h2>Gallery</h2><img src="' + LEG(3) + '" alt="Loaves"><img src="' + LEG(4) + '" alt="Pastries"><img src="' + LEG(5) + '" alt="Counter"></section>') + '</body></html>';
+const HERO = /<img data-hero="4"[^>]*>/, GALLERY_IMGS = /(<section id="gallery"><h2>Gallery<\/h2>)(?:<img[^>]*>)+/, SERVICE_IMGS = /(<h2>Our services<\/h2>)(?:<img[^>]*>)+/;
+const edit = (before, after, ins, ctx = { type: 'cafe' }) => ai.editImageProblem(before, after, ins, ctx), code = (before, after, ins, ctx) => (edit(before, after, ins, ctx) || {}).code || null;
+const DRAWN = '<svg viewBox="0 0 10 10" role="img" aria-label="Loaf"><rect width="10" height="10" fill="#c96"/><circle cx="5" cy="5" r="3" fill="#fed"/></svg>';
+
+test('unique photos: a photo already on the page cannot be used again, whatever its alt text says; the URL decides', () => {
+  const base = SITE(), ask = 'Replace the hero image';
+  assert.equal(code(base, base.replace(GAL[0], GAL[1]), ask), null, 'an unused approved photo');
+  const used = SITE({ gallery: '<section id="gallery"><h2>Gallery</h2><img src="' + GAL[1] + '" alt="Seating"></section>' });
+  assert.equal(code(used, used.replace(HERO, '<img data-hero="4" src="' + GAL[1] + '" alt="Seating">'), ask), 'IMAGE_DUPLICATE', 'exact duplicate: same URL, same alt');
+  assert.equal(code(used, used.replace(HERO, '<img data-hero="4" src="' + GAL[1] + '" alt="A completely different description">'), ask), 'IMAGE_DUPLICATE', 'same URL, different alt text');
+  assert.equal(code(used, used.replace(HERO, '<img data-hero="4" src="' + GAL[1] + '" alt="">'), ask), 'IMAGE_DUPLICATE', 'same URL, no alt text');
+  assert.match(edit(used, used.replace(HERO, '<img data-hero="4" src="' + GAL[1] + '" alt="x">'), ask).message, /same photo more than once/);
+  // two new copies of one photo
+  assert.equal(code(base, base.replace('</body>', '<img src="' + GAL[1] + '" alt="a"><img src="' + GAL[1] + '" alt="b"></body>'), 'Add two photos of the seating'), 'IMAGE_DUPLICATE');
+  assert.equal(code(base, base.replace('</body>', '<img src="' + GAL[1] + '" alt="a"><img src="' + GAL[2] + '" alt="b"></body>'), 'Add two photos of the seating'), null, 'two different approved photos');
+  // a photo held by a kept image through srcset, or by an existing CSS background, is taken too
+  const viaSrcset = SITE({ gallery: '<section id="gallery"><h2>Gallery</h2><img src="' + LEG(3) + '" srcset="' + GAL[1] + ' 1x" alt="Loaves"></section>' });
+  assert.equal(code(viaSrcset, viaSrcset.replace(HERO, '<img data-hero="4" src="' + GAL[1] + '" alt="x">'), ask), 'IMAGE_DUPLICATE');
+  const viaCss = SITE({ head: '<style>.band{background:url(' + GAL[1] + ')}</style>' });
+  assert.equal(code(viaCss, viaCss.replace(HERO, '<img data-hero="4" src="' + GAL[1] + '" alt="x">'), ask), 'IMAGE_DUPLICATE');
+  // the image being replaced does not count as "another" photo on the page: the same URL with a new alt, and swapping within the page
+  assert.equal(code(base, base.replace('alt="Cafe atmosphere"', 'alt="Warm morning light"'), ask), null, 'an alt change on the photo being replaced');
+  const two = SITE({ gallery: '<section id="gallery"><h2>Gallery</h2><img src="' + GAL[1] + '" alt="Seating"></section>' });
+  assert.equal(code(two, two.replace(HERO, '<img data-hero="4" src="' + GAL[1] + '" alt="Seating">').replace(/<img src="[^"]*" alt="Seating"><\/section>/, '<img src="' + GAL[2] + '" alt="Counter"></section>'), 'Replace the hero image and the gallery photo'), null, 'the gallery photo is replaced too, so its old photo is free');
+  assert.equal(ai.editImageProblem(used, used, 'Make the heading bigger'), null, 'duplicates that were already there are left alone');
+});
+
+test('illustration versus photograph: a removed hero may be replaced by an approved photo or by a genuine inline SVG / CSS illustration, never by a loaded image', () => {
+  const base = SITE(), ask = 'Replace the hero image', noHero = base.replace(HERO, '');
+  assert.equal(code(base, base.replace(GAL[0], GAL[1]), ask), null, 'approved photo');
+  assert.equal(code(base, noHero.replace('<p>Fresh bread', DRAWN + '<p>Fresh bread'), ask), null, 'inline SVG illustration');
+  assert.equal(code(base, noHero.replace('<p>Fresh bread', '<div class="art" style="background:radial-gradient(circle,#fed,#c96)"></div><p>Fresh bread'), ask), null, 'CSS gradient illustration');
+  assert.equal(code(base, noHero.replace('</head>', '<style>.art{background-image:linear-gradient(135deg,#c96,#fed)}</style></head>').replace('<p>Fresh bread', '<div class="art"></div><p>Fresh bread'), ask), null, 'CSS illustration in a stylesheet');
+  // not genuine: nothing drawn, a hidden defs svg, no replacement at all, or the old page's own svg/gradient moved around
+  for (const [label, html] of [['nothing', ''], ['empty svg', '<svg viewBox="0 0 1 1"></svg>'], ['zero-size svg', '<svg width="0" height="0"><rect width="1" height="1"/></svg>'], ['defs only', '<svg><defs><filter id="f"/></defs></svg>']])
+    assert.equal(code(base, noHero.replace('<p>Fresh bread', html + '<p>Fresh bread'), ask), 'IMAGES_REMOVED', label);
+  assert.match(edit(base, noHero, ask).message, /without replacing it/);
+  // an SVG that loads a picture is an image resource, not an illustration; so is a raster hidden in CSS or in an <img>
+  for (const [label, html] of [['svg image (data)', '<svg><rect width="1" height="1"/><image href="data:image/png;base64,AAAA"/></svg>'], ['svg image (local)', '<svg><rect width="1" height="1"/><image href="img/a.png"/></svg>'], ['svg feImage', '<svg><rect width="1" height="1"/><filter id="f"><feImage href="img/a.png"/></filter></svg>'],
+    ['svg image (approved URL)', '<svg><rect width="1" height="1"/><image href="' + GAL[1] + '"/></svg>'], ['data img', '<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">'], ['blob img', '<img src="blob:https://example.org/1" alt="">'], ['local img', '<img src="img/a.png" alt="">'], ['remote img', '<img src="https://example.org/x.jpg" alt="">'],
+    ['css raster', '<div style="background:url(data:image/png;base64,AAAA)"></div>'], ['css local', '<div style="background:url(img/a.png)"></div>']])
+    assert.equal(code(base, noHero.replace('<p>Fresh bread', html + '<p>Fresh bread'), ask), 'IMAGE_NOT_ALLOWED', label);
+  // an SVG illustration does not stand in for a removal of other images, and does not make an unrelated removal acceptable
+  assert.equal(code(base, noHero.replace(GALLERY_IMGS, '$1').replace('<p>Fresh bread', DRAWN + '<p>Fresh bread'), ask), 'IMAGES_REMOVED', 'the gallery photos were not part of the request');
+  // when no photo suits this website the pool is empty and the illustration is the only way
+  const tax = '<!DOCTYPE html><html><head><title>Clear Advice</title></head><body><h1>Tax advice</h1><p>Plain help for small businesses.</p><img data-hero="4" src="' + LEG(1) + '" alt="Office"></body></html>';
+  assert.equal(code(tax, tax.replace(/<img[^>]*>/, DRAWN), 'Replace the hero image', { type: 'consulting' }), null);
+  assert.equal(code(tax, tax.replace(LEG(1), GAL[0]), 'Replace the hero image', { type: 'consulting' }), 'IMAGE_NOT_ALLOWED');
+  assert.equal(ai.editImagePolicy(tax, 'Replace the hero image', { type: 'consulting' }).photos.length, 0);
+});
+
+test('intent detection: independent clauses are found around "and", "then" and "but"; a negation that covers the whole instruction is kept', () => {
+  const R = ai.imageReplacementRequested;
+  const table = [["Don't change the images and replace the hero image.", true], ["Don't change the images then replace the hero image.", true], ["Don't change or replace the images.", false], ["Don't change the images, but replace the hero image.", true], ["Don't change the images.", false], ['Replace the hero image.', true]];
+  for (const [text, want] of table) assert.equal(R(text), want, text);
+  for (const [text, want] of [["Don\u2019t change the images and replace the hero image", true], ["Don't change the images, and then replace the hero image", true], ["Don't change the images, replace the hero image", true], ['Replace the hero image without changing the gallery', true], ["Don't change the images and the logo", false], ["Don't change the images and make the heading bigger", false],
+    ['Do not replace or remove the images', false], ['Replace the hero image and gallery photos', true], ["Never change the images and never swap the photos", false], ["Keep the images and don't replace any photos", false], ['Please replace the hero image, not the gallery', true]]) assert.equal(R(text), want, text);
+  // the clause that is positive is the one that gets permission, so the policy and the validator agree
+  const b = SITE(), swapped = b.replace(GAL[0], GAL[1]);
+  for (const [text, want] of table) assert.equal(code(b, swapped, text) === null, want, 'validator: ' + text);
+  assert.equal(ai.editImagePolicy(b, table[0][0], { type: 'cafe' }).photos.length > 0, true); assert.equal(ai.editImagePolicy(b, table[2][0], { type: 'cafe' }).photos.length, 0);
+  assert.equal(ai.imageRemovalRequested("Don't remove the images and remove the gallery"), true); assert.equal(ai.imageRemovalRequested("Don't remove or delete the gallery"), false);
+});
+
+test('normal edits: an image cannot arrive through CSS, SVG, a poster, an input, a source, a picture, an icon or a social tag; decorative CSS data textures still can', () => {
+  const b = SITE(), inHead = x => b.replace('</head>', x + '</head>'), inBody = x => b.replace('</body>', x + '</body>');
+  const rejected = [['css relative', inHead('<style>.h{background-image:url(img/bg.png)}</style>')], ['css relative quoted', inHead('<style>.h{background:url("img/bg.png")}</style>')], ['css root-relative', inHead('<style>.h{background:url(/uploads/bg.png)}</style>')], ['css raster data', inHead('<style>.h{background:url("data:image/png;base64,AAAA")}</style>')],
+    ['css gif data', inBody('<div style="background:url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)"></div>')], ['css image-set', inHead('<style>.h{background-image:image-set("img/a.png" 1x, "img/b.png" 2x)}</style>')], ['css list-style', inHead('<style>li{list-style:url(img/dot.png)}</style>')], ['css cursor', inHead('<style>a{cursor:url(img/c.cur),auto}</style>')],
+    ['css entity-quoted', inBody('<div style="background:url(&quot;img/x.png&quot;)"></div>')], ['svg image', inBody('<svg><image href="img/a.png"/></svg>')], ['svg image xlink', inBody('<svg><image xlink:href="img/a.png"/></svg>')], ['svg image data', inBody('<svg><image href="data:image/png;base64,AAAA"/></svg>')], ['svg feImage', inBody('<svg><filter id="f"><feImage href="img/a.png"/></filter></svg>')],
+    ['svg use of a file', inBody('<svg><use href="sprites.svg#a"/></svg>')], ['video poster', inBody('<video poster="img/p.jpg"></video>')], ['input image', inBody('<input type="image" src="img/b.png" alt="Go">')], ['source srcset', inBody('<source srcset="img/a.webp">')], ['new picture', inBody('<picture><source srcset="img/a.webp"><img src="img/a.png" alt=""></picture>')],
+    ['picture with only a source', inBody('<picture><source srcset="img/a.webp"></picture>')], ['icon link', inHead('<link rel="icon" href="data:image/png;base64,AAAA">')], ['preload image', inHead('<link rel="preload" as="image" href="img/a.png">')], ['og:image', inHead('<meta property="og:image" content="img/share.png">')],
+    ['decorative-looking svg with a raster inside', inHead('<style>.t2{background:url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27><image href=%27data:image/png;base64,AAAA%27/></svg>")}</style>')], ['svg data pointing elsewhere', inHead('<style>.t2{background:url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27><use href=%27img/x.svg%23a%27/></svg>")}</style>')],
+    ['svg data that is not svg', inHead('<style>.t2{background:url("data:image/svg+xml;base64,AAAA")}</style>')]];
+  for (const [label, after] of rejected) { const p = edit(b, after, 'Make the heading bigger'); assert.ok(p, label); assert.equal(p.code, 'IMAGES_ADDED', label); assert.match(p.message, /Your website was not changed/, label); }
+  assert.equal(code(b, inHead('<style>.h{background:url(https://example.org/bg.png)}</style>'), 'Make the heading bigger'), 'IMAGES_CHANGED', 'an external URL is still caught first, as before');
+  const grain = "<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='.08'/></svg>";
+  const ok = [['utf8 svg texture', inHead('<style>.t2{background-image:url("data:image/svg+xml;utf8,' + grain.replace(/</g, '%3C').replace(/>/g, '%3E').replace(/#/g, '%23') + '")}</style>')], ['plain svg texture', inHead('<style>.t2{background-image:url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27/>")}</style>')],
+    ['base64 svg texture', inHead('<style>.t2{background:url(data:image/svg+xml;base64,' + Buffer.from(grain.replace('%23', '#')).toString('base64') + ')}</style>')], ['single-quoted url', inHead('<style>.t2{background:url(\'data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%274%27 height=%274%27/>\')}</style>')],
+    ['fragment reference', inHead('<style>.u{fill:url(#grad);filter:url(#n)}</style>')], ['inline svg illustration', inBody(DRAWN)], ['css gradient', inHead('<style>.g2{background:conic-gradient(#fff,#000)}</style>')], ['inline svg symbol use', inBody('<svg><use href="#a"/></svg>')], ['text change', b.replace('Fresh bread', 'Fresh sourdough')]];
+  for (const [label, after] of ok) assert.equal(edit(b, after, 'Make the heading bigger'), null, label);
+  // what a page already had stays valid: a legacy CSS raster and legacy video poster, unchanged
+  const legacy = SITE({ head: '<style>.old{background:url("data:image/png;base64,AAAA")}</style>', gallery: '<video poster="img/old.jpg"></video>' });
+  assert.equal(edit(legacy, legacy.replace('Fresh bread', 'Fresh sourdough'), 'Make the heading bigger'), null);
+  assert.equal(ai.imagePreservationProblem(legacy, legacy.replace('</head>', '<style>.n{background:url(img/new.png)}</style></head>'))?.code, 'IMAGES_ADDED', 'but one more is a new image');
+  assert.equal(ai.imagePreservationProblem(legacy, legacy.replace('</head>', '<style>.old2{background:url("data:image/png;base64,AAAA")}</style></head>'))?.code, 'IMAGES_ADDED', 'even an identical raster is one more image when there is no second original');
+});
+
+test('explicit replacement keeps every other door closed: CSS, SVG, poster, input, source and icon images are refused whatever the instruction says', () => {
+  const b = SITE(), ask = 'Replace the hero image', swapped = b.replace(GAL[0], GAL[1]);
+  for (const [label, extra] of [['css url', '<style>.h{background:url(' + GAL[2] + ')}</style>'], ['css local', '<style>.h{background:url(img/a.png)}</style>'], ['image-set', '<style>.h{background:image-set("' + GAL[2] + '" 1x)}</style>'], ['poster', '<video poster="' + GAL[2] + '"></video>'], ['input image', '<input type="image" src="' + GAL[2] + '">'],
+    ['svg image', '<svg><image href="' + GAL[2] + '"/></svg>'], ['svg feImage', '<svg><filter id="f"><feImage href="' + GAL[2] + '"/></filter></svg>'], ['picture source', '<picture><source srcset="' + GAL[2] + '"><img src="' + GAL[2] + '" alt=""></picture>'], ['icon', '<link rel="icon" href="' + GAL[2] + '">'], ['og:image', '<meta property="og:image" content="' + GAL[2] + '">']])
+    assert.equal(code(b, swapped.replace('</body>', extra + '</body>'), ask), 'IMAGE_NOT_ALLOWED', label);
+  assert.equal(code(b, swapped.replace('</head>', '<style>.t2{background:url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27/>")}</style></head>'), ask), null, 'a decorative texture is not an image');
+});
+
+test('removal scope: only the images the instruction names may disappear, and nothing is deleted when the scope cannot be determined', () => {
+  const b = SITE(), noGallery = b.replace(GALLERY_IMGS, '$1'), noHero = b.replace(HERO, ''), noServices = b.replace(SERVICE_IMGS, '$1'), noImages = b.replace(/<img[^>]*>/g, '');
+  // removing the gallery removes the gallery and nothing else
+  assert.equal(code(b, noGallery, 'Remove the gallery photos'), null);
+  assert.equal(code(b, noGallery, 'Remove the gallery'), null);
+  assert.equal(code(b, noGallery.replace(HERO, ''), 'Remove the gallery photos'), 'IMAGES_REMOVED', 'the hero went with it');
+  assert.equal(code(b, noGallery.replace(SERVICE_IMGS, '$1'), 'Remove the gallery photos'), 'IMAGES_REMOVED', 'so did the service images');
+  assert.match(edit(b, noGallery.replace(HERO, ''), 'Remove the gallery photos').message, /did not ask about: "Cafe atmosphere"/);
+  assert.equal(code(b, noImages, 'Remove the gallery photos'), 'IMAGES_REMOVED');
+  // replacing the hero does not authorise deleting the gallery, and a replaced hero with an intact gallery is fine
+  assert.equal(code(b, b.replace(GAL[0], GAL[1]), 'Replace the hero image'), null);
+  assert.equal(code(b, noGallery.replace(GAL[0], GAL[1]), 'Replace the hero image'), 'IMAGES_REMOVED');
+  assert.equal(code(b, noGallery.replace(HERO, DRAWN), 'Replace the hero image'), 'IMAGES_REMOVED', 'an illustration for the hero does not excuse the missing gallery');
+  assert.equal(code(b, noHero, 'Replace the hero image'), 'IMAGES_REMOVED', 'removed, not replaced');
+  // removing the hero image removes the hero image
+  assert.equal(code(b, noHero, 'Remove the hero image'), null); assert.equal(code(b, noHero.replace(SERVICE_IMGS, '$1'), 'Remove the hero image'), 'IMAGES_REMOVED');
+  assert.equal(code(b, noHero, 'Remove the banner image'), null, '"banner" is another word for the hero');
+  // all images
+  for (const ins of ['Remove all images', 'Remove all the photos', 'Delete every image', 'Remove the images', 'Remove the photos']) assert.equal(code(b, noImages, ins), null, ins);
+  assert.equal(code(b, noGallery, 'Remove all images'), null, 'removing fewer than all is also within "all"');
+  assert.equal(code(b, noImages, 'Remove all gallery images'), 'IMAGES_REMOVED', 'all of the GALLERY is not all images');
+  // by alt text, by section heading, by position
+  assert.equal(code(b, b.replace(/<img src="[^"]*" alt="Catering table">/, ''), 'Remove the catering photo'), null);
+  assert.equal(code(b, b.replace(/<img src="[^"]*" alt="Wedding cakes">/, ''), 'Remove the catering photo'), 'IMAGES_REMOVED', 'the wrong service image');
+  assert.equal(code(b, noServices, 'Remove the service photos'), null); assert.equal(code(b, noServices, 'Remove the gallery photos'), 'IMAGES_REMOVED');
+  assert.equal(code(b, b.replace(/<img src="[^"]*" alt="Catering table">/, ''), 'Remove the first service photo'), null); assert.equal(code(b, b.replace(/<img src="[^"]*" alt="Wedding cakes">/, ''), 'Remove the first service photo'), 'IMAGES_REMOVED');
+  assert.equal(code(b, b.replace(/<img src="[^"]*" alt="Counter">/, ''), 'Remove the last photo'), null); assert.equal(code(b, noHero, 'Remove the last photo'), 'IMAGES_REMOVED');
+  assert.equal(code(b, noHero, 'Remove the first photo'), null);
+  // two named things in one instruction
+  assert.equal(code(b, noGallery.replace(GAL[0], GAL[1]), 'Replace the hero image and remove the gallery photos'), null);
+  assert.equal(code(b, noGallery.replace(GAL[0], GAL[1]).replace(SERVICE_IMGS, '$1'), 'Replace the hero image and remove the gallery photos'), 'IMAGES_REMOVED');
+  // an addition never authorises a removal
+  assert.equal(code(b, noGallery.replace('</body>', '<img src="' + GAL[1] + '" alt="Seating"></body>'), 'Add a photo of the seating'), 'IMAGES_REMOVED');
+  assert.equal(code(b, b.replace('</body>', '<img src="' + GAL[1] + '" alt="Seating"></body>'), 'Add a photo of the seating'), null);
+  // scope that cannot be determined fails safely: nothing may change, and the message says what to do
+  for (const ins of ['Remove the photo', 'Remove the old blurry picture', 'Replace the image']) {
+    const p = edit(b, noGallery.replace(HERO, ''), ins); assert.equal(p?.code, 'IMAGE_SCOPE_UNCLEAR', ins); assert.match(p.message, /did not say which image/); assert.match(p.message, /Your website was not changed/);
+  }
+  assert.equal(code(b, b, 'Remove the photo'), null, 'nothing was changed, so nothing is wrong');
+  assert.equal(code(b, noHero, 'Remove the photo of the interior'), 'IMAGE_SCOPE_UNCLEAR', 'no image matches "interior"');
+  // a one-image page: the singular means that image; with no hero markup the first image is the hero
+  const lone = '<!DOCTYPE html><html><head><title>Brightside Bakery cafe</title></head><body><h1>Hi</h1><img src="' + GAL[0] + '" alt="Cafe atmosphere"><img src="' + LEG(1) + '" alt="Other"></body></html>';
+  assert.equal(code(lone, lone.replace(/<img src="[^"]*" alt="Cafe atmosphere">/, ''), 'Remove the hero image'), null); assert.equal(code(lone, lone.replace(/<img src="[^"]*" alt="Other">/, ''), 'Remove the hero image'), 'IMAGES_REMOVED');
+  const single = lone.replace(/<img src="[^"]*" alt="Other">/, ''); assert.equal(code(single, single.replace(/<img[^>]*>/, ''), 'Remove the photo'), null);
+  // a picture is one image: removing "the hero" takes its sources with it
+  const pic = SITE({ hero: '<picture><source srcset="img/hero.webp"><img data-hero="4" src="' + GAL[0] + '" alt="Cafe atmosphere"></picture>' });
+  assert.equal(code(pic, pic.replace(/<picture>[\s\S]*?<\/picture>/, ''), 'Remove the hero image'), null);
+  assert.equal(code(pic, pic.replace('<source srcset="img/hero.webp">', ''), 'Make the heading bigger'), 'IMAGES_REMOVED', 'and an ordinary edit may not touch it');
+  // the policy tells the model what the validator will allow
+  const pol = ai.editImagePolicy(b, 'Remove the gallery photos', { type: 'cafe' }); assert.equal(pol.targets.length, 3); assert.ok(pol.targets.every(t => /Loaves|Pastries|Counter/.test(t))); assert.equal(pol.remove, true);
+  assert.equal(ai.editImagePolicy(b, 'Replace the hero image', { type: 'cafe' }).targets.length, 1); assert.equal(ai.editImagePolicy(b, 'Remove the photo', { type: 'cafe' }).unclear, true); assert.deepEqual(ai.editImagePolicy(b, 'Make the heading bigger', { type: 'cafe' }).targets, []);
+});
+
+// The real /api/edit handler, taken from server.js and run with a fake model, fake storage and recording stand-ins for the checks, so the ORDER and the 422 are tested for real.
+async function runEdit({ html, instruction, context = { type: 'cafe' }, modelOutput, validate }) {
+  const fs = require('node:fs'), path = require('node:path'), src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const start = src.indexOf("app.post('/api/edit'"), end = src.lastIndexOf('\n});', src.indexOf('// ---- AI website generation', start)) + 4, code = src.slice(start, end), calls = [], prompts = [], store = { writes: 0 };
+  const siteAi = { ...ai, editImageProblem: (...a) => { calls.push('editImageProblem'); return ai.editImageProblem(...a); }, finalizeGenerated: (...a) => { calls.push('finalizeGenerated'); return ai.finalizeGenerated(...a); }, editImagePolicy: (...a) => { calls.push('editImagePolicy'); return ai.editImagePolicy(...a); } };
+  const GoogleGenAI = class { constructor() { this.models = { generateContent: async ({ contents }) => { calls.push('model'); prompts.push(contents); return { text: modelOutput }; } }; } };
+  let handler; const app = { post: (p, rl, h) => { handler = h; } }, out = { status: null, code: null, body: null };
+  const fail = (res, status, c, message) => { out.status = status; out.code = c; out.message = message; };
+  new Function('app', 'rateLimit', 'process', 'fail', 'MAX_HTML', 'MAX_INSTRUCTION', 'authorizeEdit', 'deps', 'siteAi', 'validateOutput', 'cleanOutput', 'GoogleGenAI', 'MODEL', 'SYSTEM', 'TIMEOUT_MS', 'console', code)(
+    app, null, { env: { GEMINI_API_KEY: 'test-key' } }, fail, 1e6, 4000, async () => null, { getStore: () => store }, siteAi, t => { calls.push('validateOutput'); return ai.validateOutput(t, 1e6); }, ai.cleanOutput, GoogleGenAI, 'test-model', 'SYSTEM', 5000, { error() {} });
+  const res = { json: b => { out.status = 200; out.body = b; } };
+  await handler({ body: { html, instruction, context }, userId: 'u1' }, res);
+  return { ...out, calls, prompt: prompts[0], store, code_src: code };
+}
+test('/api/edit route: the image policy reaches the prompt, then validateOutput, then the image check, then finalizeGenerated; an image violation is a 422 and nothing is returned or saved', async () => {
+  const b = SITE();
+  // an ordinary edit passes through every stage in order
+  const fine = await runEdit({ html: b, instruction: 'Make the heading bigger', modelOutput: b.replace('Fresh bread', 'Fresh sourdough') });
+  assert.equal(fine.status, 200); assert.deepEqual(fine.calls, ['editImagePolicy', 'model', 'validateOutput', 'editImageProblem', 'finalizeGenerated']); assert.match(fine.prompt, /Do not add, change or remove any image\./); assert.ok(!/Approved photos you may use/.test(fine.prompt));
+  assert.match(fine.body.html, /Fresh sourdough/); assert.equal(fine.store.writes, 0);
+  // an image violation is rejected before finalization with a 422 and a useful code; the route itself never writes a project
+  for (const [label, instruction, output, want] of [['image removed', 'Make the heading bigger', b.replace(HERO, ''), 'IMAGES_REMOVED'], ['image added', 'Make the heading bigger', b.replace('</body>', '<img src="img/new.png" alt=""></body>'), 'IMAGES_ADDED'], ['css image added', 'Make the heading bigger', b.replace('</head>', '<style>.h{background:url(img/a.png)}</style></head>'), 'IMAGES_ADDED'],
+    ['unapproved replacement', 'Replace the hero image', b.replace(GAL[0], 'img/new.png'), 'IMAGE_NOT_ALLOWED'], ['duplicate photo', 'Replace the hero image', b.replace(GAL[0], GAL[1]).replace('</body>', '<img src="' + GAL[1] + '" alt="x"></body>'), 'IMAGE_DUPLICATE'], ['over-removal', 'Remove the gallery photos', b.replace(GALLERY_IMGS, '$1').replace(HERO, ''), 'IMAGES_REMOVED']]) {
+    const r = await runEdit({ html: b, instruction, modelOutput: output }); assert.equal(r.status, 422, label); assert.equal(r.code, want, label); assert.match(r.message, /Your website was not changed/, label);
+    assert.ok(!r.calls.includes('finalizeGenerated'), label + ': no finalization'); assert.equal(r.body, null, label + ': no HTML is returned'); assert.equal(r.store.writes, 0, label);
+    assert.deepEqual(r.calls.filter(c => c !== 'editImagePolicy' && c !== 'model'), ['validateOutput', 'editImageProblem'], label);
+  }
+  // the violating HTML is never repaired: an accepted explicit replacement comes back exactly as the model wrote it (apart from finalization)
+  const good = await runEdit({ html: b, instruction: 'Replace the hero image', modelOutput: b.replace(GAL[0], GAL[1]) });
+  assert.equal(good.status, 200); assert.ok(good.body.html.includes(GAL[1])); assert.ok(!good.body.html.includes(GAL[0]));
+  assert.match(good.prompt, /Approved photos you may use/); assert.ok(good.prompt.includes(GAL[1])); assert.match(good.prompt, /Only these existing images may change: "Cafe atmosphere"/); assert.match(good.prompt, /drawn inline <svg> or CSS gradient illustration/);
+  const unclear = await runEdit({ html: b, instruction: 'Replace the image', modelOutput: b }); assert.match(unclear.prompt, /did not name an existing image, so keep every existing image/);
+  // invalid output never reaches the image check, and storage is never touched by the route
+  const junk = await runEdit({ html: b, instruction: 'Replace the hero image', modelOutput: '<p>not a page</p>' }); assert.equal(junk.status, 502); assert.equal(junk.code, 'AI_BAD_OUTPUT'); assert.ok(!junk.calls.includes('editImageProblem') && !junk.calls.includes('finalizeGenerated'));
+  assert.equal((fine.code_src.match(/getStore/g) || []).length, 1, 'the only storage access in /api/edit is the ownership check');
+});

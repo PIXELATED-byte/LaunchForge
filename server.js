@@ -142,6 +142,7 @@ Rules:
 - Apply the requested changes while preserving unrelated content.
 - Keep CSS and JavaScript inline.
 - Preserve the LaunchForge motion hooks (the data-hero and data-reveal attributes and the .line spans inside headlines). LaunchForge adds its own animation stylesheet and script after your edit, so do not write CSS or JavaScript for data-hero or data-reveal and do not add class="js" to <html>. If the user asks to change an animation, change the hooks (which element, which data-reveal treatment) or your own hover and menu transitions.
+- Keep every <img> element exactly as it is (src, alt and attributes) and never add, change or remove image URLs, unless the <image_policy> block says the user asked to replace images. Never invent an image URL. When replacement is allowed, use only the photos listed in <image_policy>, each at most once and only as an <img src>; if none are listed, use inline SVG or CSS illustration instead.
 - Do not add external scripts, iframes, objects, embeds, or base tags.
 - Keep the website responsive and accessible.
 - Keep forms as client-side demonstrations.
@@ -215,6 +216,9 @@ app.post('/api/edit', rateLimit, async (req, res) => {
         .join('\n')
     : '';
 
+  const baseHtml = siteAi.stripInjectedMotion(html);   // the page as the model sees it, without LaunchForge's motion blocks; images are judged against this page
+  const imagePolicy = siteAi.editImagePolicy(baseHtml, ins, context);   // images are kept exactly as they are unless the instruction explicitly asks to change them
+
   const prompt = `
 <project_context>
 ${ctx}
@@ -224,8 +228,16 @@ ${ctx}
 ${ins.replace(/<\/instruction>/gi, '')}
 </instruction>
 
+<image_policy>
+${imagePolicy.replace
+    ? 'The user asked to change images. Approved photos you may use (each at most once, never one that is already on the page, only as <img src>): ' + (imagePolicy.photos.length ? imagePolicy.photos.map(p => p.url).join(' ') : 'none, so use inline SVG or CSS illustration.')
+      + (imagePolicy.targets.length ? ' Only these existing images may change: ' + imagePolicy.targets.join('; ') + '. Keep every other image exactly as it is.' : ' The request did not name an existing image, so keep every existing image exactly as it is.')
+      + (imagePolicy.remove ? ' Removing the images the user named is allowed.' : ' Every image you remove must be replaced by an approved photo or by a drawn inline <svg> or CSS gradient illustration (never a data:, blob:, local or other remote image, and never a CSS, SVG or poster image).')
+    : 'Do not add, change or remove any image.'}
+</image_policy>
+
 <website_html>
-${siteAi.stripInjectedMotion(html).replace(/<\/website_html>/gi, '<\\/website_html>')}
+${baseHtml.replace(/<\/website_html>/gi, '<\\/website_html>')}
 </website_html>
 `;
 
@@ -262,6 +274,12 @@ ${siteAi.stripInjectedMotion(html).replace(/<\/website_html>/gi, '<\\/website_ht
 
     if (problem) {
       return fail(res, 502, 'AI_BAD_OUTPUT', problem);
+    }
+
+    // Image URLs: unchanged unless replacement was requested, and then only approved photos that suit this website (existing URLs always stay valid).
+    const imageProblem = siteAi.editImageProblem(baseHtml, output, ins, context);
+    if (imageProblem) {
+      return fail(res, 422, imageProblem.code, imageProblem.message);
     }
 
     // The model never sees LaunchForge's motion blocks (stripped above), so it cannot break or rewrite them. finalizeGenerated reinstalls the canonical
