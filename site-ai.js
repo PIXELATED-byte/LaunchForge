@@ -119,7 +119,7 @@ DESIGN QUALITY
 
 IMAGERY (curated real photography + purposeful illustration)
 
-- Use the VERIFIED PHOTOGRAPHY LIBRARY supplied in the system prompt. Use its exact URLs in <img src="..."> when photography materially improves the design. Never invent, alter, or substitute image URLs.
+- Use the VERIFIED PHOTOGRAPHY LIBRARY supplied in the system prompt. Use its exact URLs in <img src="..."> when photography materially improves the design. Never invent, alter, or substitute image URLs. Use each library photo at most once: when the library has fewer photos than image slots, fill the remaining slots with inline SVG or CSS illustration instead of repeating a photo. The library does not describe what a photo shows, so write neutral alt text that names only the kind of place or business (for example "Cafe atmosphere") and never invent specific details.
 - Use real photography for relevant hero visuals, architecture, interiors, food, fitness, products, and editorial atmosphere. Use object-fit:cover, fixed aspect-ratio, overflow:hidden, and meaningful alt text. Add restrained overlays only when necessary for legibility.
 - Stock photography is atmosphere or a visual example, NOT evidence of the owner\'s work, clients, inventory, team, premises, or achievements. Never label stock imagery as a completed client project or actual product. In portfolios, label illustrative entries "Concept" and do not imply real commissions.
 - If a relevant photo is unavailable, use purposeful inline SVG, CSS composition, a diagram, or interface illustration. Label work-related illustrations "Illustration" or "Concept"; never pretend illustration is photography. Avoid generic decorative blobs or meaningless geometric placeholders.
@@ -211,9 +211,16 @@ function normalizeBrief(b) {
 // Owner text goes inside a data tag; "<" is neutralised so it cannot close the tag or open a new one.
 const data = s => String(s).replace(/</g, '&lt;');
 
+// Only photos filed under this business's categories are offered. The library does not say what a photo shows, and the model cannot see it.
+function libraryPrompt(brief) {
+  const photos = photosForBrief(brief);
+  if (!photos.length) return 'VERIFIED PHOTOGRAPHY LIBRARY: no approved photograph suits this kind of business. Do not use any remote image: draw every visual as inline SVG or CSS illustration.';
+  return 'VERIFIED PHOTOGRAPHY LIBRARY for this business (use exact URLs only as img src; use each photo at most once; never claim stock imagery is client work): ' +
+    JSON.stringify(photos.map(p => ({ url: p.url, filedUnder: p.categories, subject: p.subject || 'not confirmed' })), null, 2);
+}
 function buildGenerationPrompt(brief) {
   const system = SYSTEM_RULES + '\n\nVISUAL STYLE: ' + brief.style + '. ' + STYLE_GUIDE[brief.style] + '\n\nBUSINESS TYPE GUIDANCE: ' + TYPE_GUIDE[brief.type] +
-    '\n\nVERIFIED PHOTOGRAPHY LIBRARY (use exact URLs only as img src; select relevant images, never claim stock imagery is client work): ' + JSON.stringify(PHOTO_LIBRARY, null, 2) +
+    '\n\n' + libraryPrompt(brief) +
     '\n\nINDUSTRY DIRECTION (the design logic for this kind of business; your DESIGN PLAN must reflect it): ' + industryDirection(brief).text +
     '\n\nMOTION LANGUAGE (one personality, used consistently): ' + MOTION_STYLE[brief.style] + ' ' + MOTION_TYPE[brief.type];
   const prompt = `<business_brief>
@@ -251,32 +258,312 @@ function validateOutput(t, maxHtml) {
   return null;
 }
 
-// Verified, curated photography. Only these exact URLs may appear in image src attributes.
-const PHOTO_LIBRARY = {
-  cafe: [
-    "https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=1200&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=1200&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1559305616-3f99cd43e353?w=1200&auto=format&fit=crop"
-  ],
-  restaurant: [
-    "https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=1200&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=1200&auto=format&fit=crop"
-  ],
-  architecture: [
-    "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=1200&auto=format&fit=crop"
-  ],
-  fitness: [
-    "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1200&auto=format&fit=crop"
-  ],
-  retail: [
-    "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=1200&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1200&auto=format&fit=crop"
-  ],
-  portfolio: [
-    "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1200&auto=format&fit=crop"
-  ]
-};
-const APPROVED_PHOTOS = new Set(Object.values(PHOTO_LIBRARY).flat());
+// Verified, curated photography. Only these exact URLs may appear in image src attributes (the same eight URLs as before).
+// `categories` records how the library has always filed each photo (the keys of the former PHOTO_LIBRARY). It has NOT been confirmed by looking at the image.
+// `subject` is null until someone has confirmed what the photo shows; nothing here is guessed. `evidence` says where a non-null subject came from.
+// `confirmed` becomes true only after a person has looked at the image, and `subject` is then set from that. See photoLabelsToConfirm().
+const unsplashPhoto = id => 'https://images.unsplash.com/photo-' + id + '?w=1200&auto=format&fit=crop';
+const PHOTO_CATALOG = [
+  { id: '1554118811-1e0d58224f24', categories: ['cafe', 'restaurant'], subject: null, evidence: null, confirmed: false },
+  { id: '1501339847302-ac426a4a7cbb', categories: ['cafe', 'restaurant'], subject: null, evidence: null, confirmed: false },
+  { id: '1559305616-3f99cd43e353', categories: ['cafe'], subject: null, evidence: null, confirmed: false },
+  { id: '1600210492486-724fe5c67fb0', categories: ['architecture'], subject: null, evidence: null, confirmed: false },
+  { id: '1534438327276-14e5300c3a48', categories: ['fitness'], subject: null, evidence: null, confirmed: false },
+  { id: '1542291026-7eec264c27ff', categories: ['retail'], subject: 'athletic shoe (product shot)', evidence: 'Third-party pages that embed this photo label it "NIKE AIR" and "Product". Not inspected visually.', confirmed: false },
+  { id: '1523275335684-37898b6baf30', categories: ['retail'], subject: null, evidence: null, confirmed: false },
+  { id: '1497366754035-f200968a6e72', categories: ['portfolio'], subject: null, evidence: null, confirmed: false }
+].map(p => Object.freeze({ ...p, url: unsplashPhoto(p.id) }));
+const PHOTO_LIBRARY = Object.freeze(PHOTO_CATALOG.reduce((lib, p) => { for (const c of p.categories) (lib[c] = lib[c] || []).push(p.url); return lib; }, {}));
+const APPROVED_PHOTOS = new Set(PHOTO_CATALOG.map(p => p.url));
+
+// Which photos suit a business: its type, plus what its name/description/audience say. A photo is offered only when one of its categories matches.
+const PHOTO_TYPE_CATEGORIES = { cafe: ['cafe'], restaurant: ['restaurant'], fitness: ['fitness'], portfolio: ['portfolio'], consulting: [], other: [] };
+const PHOTO_KEYWORDS = [
+  ['architecture', /architect|interior|furniture|joinery|joiner\b|carpent|cabinet|woodwork|construction|renovat|real estate|property/i],
+  ['retail', /boutique|fashion|jewel|clothing|apparel|footwear|sneaker|\bshoes?\b|\bwatches\b|retail|e-?commerce|online (?:shop|store)|gift (?:shop|store)/i],   // never a bare "shop": a coffee shop is not retail
+  ['cafe', /\bcafe\b|café|coffee|espresso|bakery|patisserie/i],
+  ['restaurant', /restaurant|bistro|dining|brunch|pizz|\bchef\b/i],
+  ['fitness', /\bgym\b|fitness|yoga|pilates|crossfit|personal train|boxing|martial|climbing/i]
+];
+function photoCategories(brief) {
+  const b = brief || {}, hay = [b.name, b.desc, b.audience].map(v => (typeof v === 'string' ? v : '')).join(' ');
+  const cats = new Set(PHOTO_TYPE_CATEGORIES[b.type] || []);
+  for (const [c, re] of PHOTO_KEYWORDS) if (re.test(hay)) cats.add(c);
+  return cats;
+}
+const photosInCategories = cats => PHOTO_CATALOG.filter(p => p.categories.some(c => cats.has(c)));
+const photosForBrief = brief => photosInCategories(photoCategories(brief));
+// The photos an EDIT may use when replacement is requested. The business category comes from trusted project context (its type and name) and from the visible website text,
+// never from the photos already on the page: an irrelevant photo that is already there must not make its own category eligible. Not enough context means no photos.
+function photosForHtml(html, context) {
+  const ctx = typeof context === 'string' ? { type: context } : (context || {});
+  const cats = new Set(PHOTO_TYPE_CATEGORIES[ctx.type] || []);
+  const visible = (typeof ctx.name === 'string' ? ctx.name + ' ' : '') + String(html).replace(/<!--[\s\S]*?-->|<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>|<[^>]+>/gi, ' ').slice(0, 6000);
+  for (const [c, re] of PHOTO_KEYWORDS) if (re.test(visible)) cats.add(c);
+  return photosInCategories(cats);
+}
+// The labels that still need a person to look at the photo (everything not confirmed): id, how it is filed, what is (not) known.
+const photoLabelsToConfirm = () => PHOTO_CATALOG.filter(p => !p.confirmed).map(p => ({ id: p.id, url: p.url, filedUnder: p.categories, subject: p.subject, evidence: p.evidence }));
+
+// ---- image URLs in a page
+const decodeAmp = v => String(v).replace(/&amp;/gi, '&').trim();
+function imgSrcs(html) { return [...String(html).matchAll(/<img\b[^>]*>/gi)].map(m => linkAttr(m[0], 'src')).filter(v => v != null).map(decodeAmp); }
+// Every external (http, https or protocol-relative) URL that can load an image: img/source/video src and poster, srcset, SVG image href, CSS url().
+function externalImageUrls(html) {
+  const h = String(html), out = new Set(), add = v => { const u = decodeAmp(v); if (/^(?:https?:)?\/\//i.test(u)) out.add(u); };
+  for (const m of h.matchAll(/<(?:img|source|video)\b[^>]*>/gi)) for (const a of ['src', 'poster']) { const v = linkAttr(m[0], a); if (v != null) add(v); }
+  for (const m of h.matchAll(/<(?:img|source)\b[^>]*>/gi)) { const v = linkAttr(m[0], 'srcset'); if (v != null) v.split(',').forEach(x => add(x.trim().split(/\s+/)[0] || '')); }
+  for (const m of h.matchAll(/<(?:image|feimage|use)\b[^>]*>/gi)) for (const a of ['href', 'xlink:href']) { const v = linkAttr(m[0], a); if (v != null) add(v); }
+  for (const m of h.matchAll(/url\(\s*(["']?)([^)"']*)\1\s*\)/gi)) add(m[2]);
+  return out;
+}
+
+// ---- image ELEMENTS (what /api/edit must preserve): every <img>, and every <source> inside a <picture>, compared by their canonical attributes.
+// Only presentation hooks may change in a normal edit; src, srcset, sizes, alt, dimensions, loading and every other attribute must not. Change this set to tighten or loosen that.
+const IMAGE_PRESENTATION_ATTRS = new Set(['class', 'style', 'data-reveal', 'data-hero']);
+const ENTITY_CHARS = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const codePoint = n => { try { return String.fromCodePoint(n); } catch { return ''; } };
+const decodeEntities = v => String(v).replace(/&(?:#(\d+)|#x([0-9a-f]+)|(amp|lt|gt|quot|apos));/gi, (m, d, x, n) => (d ? codePoint(Number(d)) : x ? codePoint(parseInt(x, 16)) : ENTITY_CHARS[n.toLowerCase()]));
+// Markup only: comments, scripts and styles can mention tags that are not elements.
+const stripNonMarkup = html => String(html).replace(/<!--[\s\S]*?-->|<script\b[\s\S]*?<\/script\s*>|<style\b[\s\S]*?<\/style\s*>/gi, ' ');
+// Where an image sits. A light walk over the markup (no DOM library) that keeps the stack of open elements, so "the hero image" and "the gallery photos" can be told apart.
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr', 'param']);
+const words = v => String(v || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+const stem = w => w.replace(/ies$/, 'y').replace(/([^s])s$/, '$1');
+const LOCATOR_NOISE = new Set(['section', 'container', 'wrapper', 'wrap', 'inner', 'content', 'row', 'col', 'main', 'page', 'body', 'html', 'div', 'img', 'image', 'photo', 'js']);
+const HERO_MARKS = new Set(['hero', 'banner', 'masthead', 'jumbotron', 'splash', 'cover', 'home', 'landing', 'intro']);   // ids, classes and data-hero that mark a hero
+const HERO_WORDS = new Set([...HERO_MARKS, 'main', 'top', 'header', 'background']);   // what a person may call it
+const GALLERY_WORDS = new Set(['gallery', 'slideshow', 'carousel', 'lightbox', 'masonry']);
+function parseAttrs(tag) {
+  const body = tag.replace(/^<[\w-]+/, '').replace(/\/?>$/, ''), attrs = new Map();
+  for (const m of body.matchAll(/([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g)) { const n = m[1].toLowerCase(); if (!attrs.has(n)) attrs.set(n, m[2] ?? m[3] ?? m[4] ?? ''); }   // the first of a repeated attribute wins, as in HTML
+  return attrs;
+}
+// Every <img>, and every <source> inside a <picture>, in document order, with the elements that enclose it.
+function imageSites(markup) {
+  const out = [], stack = [], isH = n => /^h[1-6]$/.test(n); let i = 0, pictures = 0;
+  while (i < markup.length) {
+    const lt = markup.indexOf('<', i), text = markup.slice(i, lt < 0 ? markup.length : lt);
+    if (text.trim()) for (let k = stack.length - 1; k >= 0; k--) if (isH(stack[k].name)) { stack[k].text += ' ' + text; break; }
+    if (lt < 0) break;
+    const m = /^<(\/?)([a-zA-Z][\w:-]*)(?=[\s\/>])/.exec(markup.slice(lt, lt + 60));
+    if (!m) { i = lt + 1; continue; }
+    let j = lt + m[0].length, q = null;
+    for (; j < markup.length; j++) { const c = markup[j]; if (q) { if (c === q) q = null; } else if (c === '"' || c === "'") q = c; else if (c === '>') break; }   // honour quotes: alt="a > b" does not end the tag
+    const tag = markup.slice(lt, j + 1), name = m[2].toLowerCase(); i = j + 1;
+    if (m[1]) {
+      let k = stack.length - 1; while (k >= 0 && stack[k].name !== name) k--;
+      if (k >= 0) { const f = stack[k]; stack.length = k; if (isH(name)) { const host = [...stack].reverse().find(x => !x.heading && !isH(x.name)); if (host) host.heading = f.text.replace(/\s+/g, ' ').trim(); } }
+      continue;
+    }
+    const attrs = parseAttrs(tag), pic = stack.slice().reverse().find(f => f.name === 'picture');
+    if (name === 'img' || (name === 'source' && pic)) out.push({ tag, name, attrs, chain: stack.slice(), pic: pic ? pic.id : null });
+    if (!VOID_TAGS.has(name) && !/\/>$/.test(tag)) stack.push({ name, attrs, text: '', heading: '', id: name === 'picture' ? ++pictures : 0 });
+  }
+  return out;
+}
+// What a site says about its position: every word of the ids, classes, labels and headings around it and of its own alt text, plus hero / gallery flags.
+function siteWhere(site) {
+  const frames = site.chain.concat({ attrs: site.attrs, heading: '' }), w = new Set(), marks = new Set();
+  for (const f of frames) {
+    for (const a of ['id', 'class', 'aria-label', 'data-section']) for (const t of words(f.attrs.get(a))) marks.add(stem(t));
+    if (f.attrs.has('data-hero')) marks.add('hero');
+    for (const t of words(f.heading)) w.add(stem(t));
+  }
+  for (const t of words(site.attrs.get('alt'))) w.add(stem(t));
+  for (const t of marks) w.add(t);
+  for (const t of LOCATOR_NOISE) w.delete(t);
+  return { words: w, hero: [...marks].some(t => HERO_MARKS.has(t)), gallery: [...w].some(t => GALLERY_WORDS.has(t)) };
+}
+function imageElements(html) {
+  const out = [];
+  for (const site of imageSites(stripNonMarkup(html))) {
+    const norm = [];
+    for (const [k, raw] of site.attrs) {
+      if (IMAGE_PRESENTATION_ATTRS.has(k)) continue;
+      let v = decodeEntities(raw).replace(/\s+/g, ' ').trim();
+      if (k === 'srcset') v = v.split(',').map(x => x.trim()).filter(Boolean).join(', ');
+      norm.push([k, v]);
+    }
+    norm.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    const get = k => (norm.find(([n]) => n === k) || [])[1];
+    out.push({ tag: site.name, src: get('src') || null, srcset: get('srcset') || null, alt: get('alt') ?? null, key: site.name + '\u0001' + norm.map(([k, v]) => k + '=' + v).join('\u0001'), index: out.length, pic: site.pic, where: siteWhere(site) });
+  }
+  return out;
+}
+const describeImage = e => (e.alt ? '"' + snip(e.alt) + '"' : 'an image without alt text') + ' (' + (/^data:/i.test(e.src || '') ? 'inline data image' : snip(e.src || e.srcset || 'no src')) + ')';
+const describeImages = list => list.slice(0, 3).map(describeImage).join(', ') + (list.length > 3 ? ' and ' + (list.length - 3) + ' more' : '');
+// Multiset match of the original image elements against the result. `missing`: originals that are gone or changed. `kept`: elements of the result that are an original, unchanged.
+// `extras`: elements of the result that no original accounts for (added, or the rewritten version of an original). Two identical images need two in the result.
+function matchImageElements(before, after) {
+  const was = imageElements(before), now = imageElements(after), left = new Map(), used = new Map(), missing = [], extras = [], kept = [];
+  for (const e of now) left.set(e.key, (left.get(e.key) || 0) + 1);
+  for (const e of was) { const n = left.get(e.key) || 0; if (n > 0) left.set(e.key, n - 1); else missing.push(e); used.set(e.key, (used.get(e.key) || 0) + 1); }
+  for (const e of now) { const n = used.get(e.key) || 0; if (n > 0) { used.set(e.key, n - 1); kept.push(e); } else extras.push(e); }
+  return { was, missing, extras, kept };
+}
+const sameImage = (e, x) => x.tag === e.tag && ((e.src && x.src === e.src) || (!e.src && e.srcset && x.srcset === e.srcset));
+const IMAGE_HOW = 'Images stay exactly as they are unless you explicitly ask to change them, for example "replace the hero image" or "remove the gallery photos". Your website was not changed.';
+const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+const newItems = (was, now) => { const had = new Map(); for (const v of was) had.set(v, (had.get(v) || 0) + 1); return now.filter(v => { const n = had.get(v) || 0; if (n > 0) { had.set(v, n - 1); return false; } return true; }); };
+
+// ---- images that are not <img> elements
+// A CSS data URI that is only a vector drawing (a grain, a pattern, a gradient) is a decorative texture, not an image addition. A raster, or an SVG that points at another resource, is not.
+function decorativeSvgData(v) {
+  const m = /^data:image\/svg\+xml(;[^,]*)?,([\s\S]*)$/i.exec(v);
+  if (!m || v.length > 12000) return false;
+  let svg; try { svg = /;base64/i.test(m[1] || '') ? Buffer.from(m[2], 'base64').toString('utf8') : decodeURIComponent(m[2].replace(/%(?![0-9a-f]{2})/gi, '%25')); } catch (e) { return false; }   // a bare % (width='100%') is literal, as in a browser
+  svg = svg.trim(); if (!/^(?:<\?xml[^>]*\?>\s*)?<svg\b/i.test(svg)) return false;
+  return !/<\s*(?:image|feimage|foreignobject|script|iframe|use|a|style|video|audio)\b|\bhref\s*=|\bdata\s*:|\bblob\s*:|(?:https?:)?\/\/|url\(\s*["']?(?!#)|\bon\w+\s*=|javascript:/i.test(svg.replace(/\sxmlns(?::\w+)?\s*=\s*(["'])[^"']*\1/gi, ''));
+}
+// Everything that can load an image without being an <img> or a picture <source>: CSS url() and image-set() (except #fragments and decorative SVG textures), SVG <image>/<feImage>/<use> hrefs,
+// video posters, <input type=image>, a <source srcset> outside a picture, icon/preload links and social-image meta tags. Returned as "vector:value".
+function otherImageSources(html) {
+  const h = String(html).replace(/<!--[\s\S]*?-->|<script\b[\s\S]*?<\/script\s*>/gi, ' '), out = [], clean = v => decodeEntities(v).trim().replace(/^["']|["']$/g, '').trim();
+  const css = v => { v = clean(v); if (v && !v.startsWith('#') && !decorativeSvgData(v)) out.push('css:' + v); };
+  for (const m of h.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi)) css(m[1] ?? m[2] ?? m[3] ?? '');
+  for (const m of h.matchAll(/image-set\(([^)]*)\)/gi)) for (const q of m[1].matchAll(/"([^"]*)"|'([^']*)'/g)) css(q[1] ?? q[2]);
+  for (const m of h.matchAll(/<(?:image|feimage|use)\b[^>]*>/gi)) for (const a of ['href', 'xlink:href']) { const v = linkAttr(m[0], a); if (v != null && !decodeAmp(v).startsWith('#')) out.push('svg:' + decodeAmp(v)); }
+  for (const m of h.matchAll(/<video\b[^>]*>/gi)) { const v = linkAttr(m[0], 'poster'); if (v != null) out.push('poster:' + decodeAmp(v)); }
+  for (const m of h.matchAll(/<input\b[^>]*>/gi)) if (/^image$/i.test(linkAttr(m[0], 'type') || '')) { const v = linkAttr(m[0], 'src'); out.push('input:' + (v == null ? '' : decodeAmp(v))); }
+  for (const m of h.replace(/<picture\b[\s\S]*?<\/picture\s*>/gi, ' ').matchAll(/<source\b[^>]*>/gi)) { const v = linkAttr(m[0], 'srcset'); if (v != null) out.push('source:' + decodeAmp(v)); }
+  for (const m of h.matchAll(/<link\b[^>]*>/gi)) { const rel = (linkAttr(m[0], 'rel') || '').toLowerCase(), href = linkAttr(m[0], 'href'); if (href != null && (/icon|image_src/.test(rel) || (rel === 'preload' && /^image$/i.test(linkAttr(m[0], 'as') || '')))) out.push('link:' + decodeAmp(href)); }
+  for (const m of h.matchAll(/<meta\b[^>]*>/gi)) { const n = (linkAttr(m[0], 'property') || linkAttr(m[0], 'name') || '').toLowerCase(), c = linkAttr(m[0], 'content'); if (c != null && /(?:^|:)image(?::url)?$|tileimage/.test(n)) out.push('meta:' + decodeAmp(c)); }
+  return out;
+}
+const describeOutside = list => list.slice(0, 3).map(v => snip(v)).join(', ') + (list.length > 3 ? ' and ' + (list.length - 3) + ' more' : '');
+// A genuine illustration is drawn, not loaded: a NEW inline <svg> that draws shapes and references nothing outside itself, or a NEW CSS gradient declaration.
+// Counted as new against the page before the edit. It can never be a raster, a data/blob/local/remote image or an <img>.
+function inlineSvgs(html) {
+  const h = stripNonMarkup(html), out = [], re = /<(\/?)svg(?=[\s\/>])/gi; let depth = 0, start = -1, m;
+  while ((m = re.exec(h))) { if (!m[1]) { if (depth++ === 0) start = m.index; } else if (depth > 0 && --depth === 0) out.push(h.slice(start, h.indexOf('>', m.index) + 1).replace(/\s+/g, ' ')); }
+  return out;
+}
+const drawnSvg = s => /<\s*(?:path|circle|rect|ellipse|polygon|polyline|line)\b/i.test(s) && !/\b(?:width|height)\s*=\s*["']?0(?:px)?["'\s>]/i.test((s.match(/^<svg\b[^>]*>/i) || [''])[0])
+  && !/<\s*(?:image|feimage|foreignobject|script|iframe)\b|\b(?:xlink:)?href\s*=\s*["']?(?!#)|\bdata\s*:|\bblob\s*:|url\(\s*["']?(?!#)|\bon\w+\s*=|javascript:/i.test(s.replace(/\sxmlns(?::\w+)?\s*=\s*(["'])[^"']*\1/gi, ''));
+const gradientDeclarations = html => (String(html).replace(/<!--[\s\S]*?-->|<script\b[\s\S]*?<\/script\s*>/gi, ' ').match(/background(?:-image)?\s*:[^;{}]*?(?:linear|radial|conic)-gradient\(/gi) || []).length;
+function newIllustrations(before, after) {
+  const fresh = newItems(inlineSvgs(before), inlineSvgs(after)).filter(drawnSvg).length;
+  return fresh + Math.max(0, gradientDeclarations(after) - gradientDeclarations(before));
+}
+
+// A normal edit (no explicit image request): null when the original image elements are all still there, unchanged, and nothing image-like was added, otherwise { code, message }.
+function imagePreservationProblem(before, after) {
+  const { missing, extras } = matchImageElements(before, after);
+  if (missing.length) {
+    const changed = missing.filter(e => extras.some(x => sameImage(e, x))), gone = missing.filter(e => !changed.includes(e));   // a leftover with the same src means the original was modified, not removed
+    if (gone.length) return { code: 'IMAGES_REMOVED', message: 'The AI removed or replaced ' + plural(gone.length, 'existing image') + ': ' + describeImages(gone) + '. ' + IMAGE_HOW };
+    return { code: 'IMAGES_MODIFIED', message: 'The AI changed the attributes (such as alt text, srcset or size) of ' + plural(changed.length, 'existing image') + ': ' + describeImages(changed) + '. ' + IMAGE_HOW };
+  }
+  if (extras.length) return { code: 'IMAGES_ADDED', message: 'The AI added ' + plural(extras.length, 'new image') + ' (' + describeImages(extras) + '), including images without a source or with a data, blob or local source. New images are only added when you explicitly ask for them, for example "add a photo of the interior". Your website was not changed.' };
+  const outside = newItems(otherImageSources(before), otherImageSources(after));
+  if (outside.length) return { code: 'IMAGES_ADDED', message: 'The AI added ' + plural(outside.length, 'image resource') + ' outside the normal image elements (' + describeOutside(outside) + '): CSS backgrounds, SVG images, video posters, image inputs, picture sources or icons. New images are only added when you explicitly ask for them. Your website was not changed.' };
+  return null;
+}
+
+// ---- /api/edit: images stay exactly as they are unless the user explicitly asks to change them. ONE policy: the intent below decides, for the prompt and for the validator alike.
+const IMAGE_NOUN = '(?:images?|photos?|photographs?|pictures?|pics?)';
+const IMAGE_REQUEST = new RegExp('\\b(?:replace|swap|change|switch|update|add|insert|use|put|include|remove|delete|drop|upload)\\b(?:\\W+\\w+){0,3}?\\W+' + IMAGE_NOUN + '\\b|\\b(?:new|different|another|other|fresh)\\s+(?:\\w+\\s+){0,2}?' + IMAGE_NOUN + '\\b|\\b(?:remove|delete|drop|get rid of)\\b(?:\\W+\\w+){0,3}?\\W+(?:galler(?:y|ies)|slideshow|carousel)\\b', 'i');
+// Intent is judged clause by clause. A clause is split off at a sentence end, at "but/however/except", and at "and/then/also" or a comma when a new verb follows, so
+// "Don't change the images and replace the hero image" is a negated clause plus a positive one, while "Don't change or replace the images" stays one negated clause.
+const CLAUSE_VERB = "(?:replace|swap|switch|change|update|add|insert|include|put|use|remove|delete|drop|get rid|upload|make|keep|leave|set|turn|rewrite|restyle|resize|move|fix|edit|show|hide|touch|don'?t|do not|never|not|please|just|stop|avoid|ensure)";
+const CLAUSE_SPLIT = new RegExp("[.!?;\\n]+|,?\\s*\\b(?:but|however|except|though)\\b|,?\\s*\\b(?:and|then|also|plus|while|so)\\b\\s+(?:(?:then|also|please|just)\\s+)?(?=" + CLAUSE_VERB + "\\b)|,\\s*(?=" + CLAUSE_VERB + "\\b)|\\s+(?=without\\b)", 'i');
+const NEGATION = /\b(?:don'?t|do not|dont|never|without|no need to|not|cannot|can'?t)\b/i;
+const clauses = instruction => String(instruction || '').replace(/[\u2018\u2019\u00b4`]/g, "'").split(CLAUSE_SPLIT).filter(c => c && c.trim());
+const IMAGE_REMOVAL = new RegExp('\\b(?:remove|delete|drop|get rid of)\\b(?:\\W+\\w+){0,3}?\\W+(?:' + IMAGE_NOUN + '|galler(?:y|ies)|slideshow|carousel)\\b', 'i');
+const imageRemovalRequested = instruction => clauses(instruction).some(c => IMAGE_REMOVAL.test(c) && !NEGATION.test(c));
+// "Explicit image change": replace, swap, add, remove ... an image/photo/gallery. Only approved photos may come in; removal needs imageRemovalRequested as well.
+const imageReplacementRequested = instruction => clauses(instruction).some(c => (IMAGE_REQUEST.test(c) || IMAGE_REMOVAL.test(c)) && !NEGATION.test(c));
+
+// Which existing images an instruction is about. Each non-negated image clause is "remove", "add" or "replace" (change); a replace/remove clause names its images by position
+// ("the first photo", "the last one"), by place ("the hero image", "the gallery photos", "the about section") or by what the alt text or heading says ("the counter photo"),
+// or says all/every ("remove all images"). A plural with no qualifier means all, a singular with no qualifier means the only image on a one-image page.
+// Anything else is unclear and authorises NOTHING: the validator then refuses to let an existing image change.
+const QUALIFIER_STOP = new Set(['the', 'a', 'an', 'my', 'our', 'your', 'this', 'that', 'these', 'those', 'of', 'in', 'on', 'at', 'from', 'inside', 'within', 'and', 'or', 'it', 'its', 'new', 'different', 'another', 'other', 'fresh', 'old', 'current', 'existing', 'some', 'any', 'please', 'just', 'also', 'image', 'photo', 'photograph', 'picture', 'pic', 'one', 'here', 'there', 'i', 'we', 'you', 'me', 'want', 'would', 'like', 'can', 'could', 'should', 'be', 'make', 'set', 'to', 'page', 'site', 'website', 'section', 'part', 'area', 'big', 'small', 'large', 'nice', 'good', 'great', 'real']);
+const ORDINALS = { first: 0, '1st': 0, second: 1, '2nd': 1, third: 2, '3rd': 2, fourth: 3, '4th': 3, last: -1, final: -1 };
+const ALL_WORDS = new Set(['all', 'every', 'each', 'entire', 'whole', 'everything', 'both']);
+function clauseImages(c, kind, imgs) {
+  const lower = c.toLowerCase(), vm = /\b(?:replace|swap|switch|change|update|remove|delete|drop|get rid of|use|put|add|insert|include|upload)\b/.exec(lower), verb = vm ? vm[0] : '';
+  let t = vm ? lower.slice(vm.index + vm[0].length) : lower;
+  t = t.split(/\b(?:with|by|using|so|because|instead|that)\b/)[0];
+  if (/^(?:replace|swap|switch|change|update)$/.test(verb)) t = t.split(/\b(?:to|for|into)\b/)[0];   // what it becomes is not where it is
+  const toks = words(t).filter(w => !/^(?:images?|photos?|photographs?|pictures?|pics?)$/.test(w)), ords = toks.filter(w => w in ORDINALS), all = toks.some(w => ALL_WORDS.has(w)) || /\b(?:images|photos|photographs|pictures|pics)\b/.test(t);
+  const quals = toks.filter(w => !QUALIFIER_STOP.has(w) && !(w in ORDINALS) && !ALL_WORDS.has(w)).map(stem).filter(w => !QUALIFIER_STOP.has(w));
+  let base;
+  if (quals.length) {
+    const hit = new Set();
+    for (const q of quals) {
+      if (HERO_WORDS.has(q)) { const heroes = imgs.filter(e => e.where.hero); (heroes.length ? heroes : imgs.slice(0, 1)).forEach(e => hit.add(e)); }   // no hero markup: the first image is the hero
+      else if (GALLERY_WORDS.has(q)) imgs.filter(e => e.where.gallery).forEach(e => hit.add(e));
+      else imgs.filter(e => e.where.words.has(q)).forEach(e => hit.add(e));
+    }
+    base = imgs.filter(e => hit.has(e));
+  } else if (ords.length || all) base = imgs;
+  else base = imgs.length === 1 ? imgs : [];
+  if (ords.length) base = ords.map(w => ORDINALS[w]).map(n => (n < 0 ? base[base.length + n] : base[n])).filter(Boolean);
+  return base;
+}
+function imageScope(html, instruction) {
+  const imgs = imageElements(html).filter(e => e.tag === 'img'), all = imageElements(html), scope = { requested: false, add: false, unclear: false, replaceable: new Set(), removable: new Set() };
+  for (const c of clauses(instruction)) {
+    if (NEGATION.test(c) || !(IMAGE_REQUEST.test(c) || IMAGE_REMOVAL.test(c))) continue;
+    scope.requested = true;
+    const kind = IMAGE_REMOVAL.test(c) ? 'remove' : (/\b(?:add|insert|include|put|upload)\b/i.test(c) && !/\b(?:replace|swap|switch|change|update)\b/i.test(c) ? 'add' : 'replace');
+    if (kind === 'add' || !imgs.length) { scope.add = true; continue; }   // a page without images has nothing to replace: that is an addition
+    const hit = clauseImages(c, kind, imgs);
+    if (!hit.length) { scope.unclear = true; continue; }
+    for (const e of all) if (hit.some(h => h.index === e.index || (h.pic != null && h.pic === e.pic))) (kind === 'remove' ? scope.removable : scope.replaceable).add(e.index);
+  }
+  scope.labels = all.filter(e => scope.replaceable.has(e.index) || scope.removable.has(e.index)).map(describeImage);
+  return scope;
+}
+
+// What the edit prompt tells the model: when an explicit image change is requested, the photos it may use (those that suit this website) and the existing images it may change; otherwise none.
+function editImagePolicy(html, instruction, context) {
+  const scope = imageScope(html, instruction), replace = scope.requested;
+  return { replace, remove: imageRemovalRequested(instruction), add: scope.add, unclear: scope.unclear, targets: replace ? scope.labels : [], photos: replace ? photosForHtml(html, context) : [] };
+}
+
+// Explicit image request. Everything that arrives must be an approved, suitable photo used once as <img src> (no srcset), or a drawn illustration; no image may come in through CSS, SVG,
+// a poster, an input or a picture <source>. Originals may only change when the instruction names them: a removal may delete them, a replacement needs a photo or an illustration for each.
+function explicitImageProblem(before, after, scope, context) {
+  const pool = new Set(photosForHtml(before, context).map(p => p.url)), { missing, extras, kept } = matchImageElements(before, after);
+  const bad = extras.filter(e => e.tag !== 'img' || !e.src || !pool.has(e.src) || e.srcset);   // an approved URL only counts as an <img src>; a srcset on a new or rewritten image is a bypass
+  const outside = newItems(otherImageSources(before), otherImageSources(after));
+  if (bad.length || outside.length) {
+    const parts = []; if (bad.length) parts.push(describeImages(bad)); if (outside.length) parts.push(describeOutside(outside));
+    return { code: 'IMAGE_NOT_ALLOWED', message: 'The AI used images that are not approved for this website (' + parts.join('; ') + '). Only approved library photos that suit the website are allowed, only as an image element: no data, blob, local or other remote sources, and no CSS, SVG or picture-source images. Your website was not changed.' };
+  }
+  // one photo, one place: compare the photo URLs themselves, never the alt text
+  const taken = new Map(), take = u => taken.set(u, (taken.get(u) || 0) + 1);
+  for (const e of kept) { if (e.src) take(e.src); if (e.srcset) e.srcset.split(',').forEach(x => take(x.trim().split(/\s+/)[0])); }
+  for (const v of otherImageSources(after)) take(v.slice(v.indexOf(':') + 1));
+  const dup = []; for (const e of extras) { if (taken.has(e.src)) dup.push(e); take(e.src); }
+  if (dup.length) return { code: 'IMAGE_DUPLICATE', message: 'The AI used the same photo more than once (' + describeImages(dup) + '). Each approved photo is used once per website: pick another approved photo, or draw an illustration. Your website was not changed.' };
+  // originals change only when named
+  const named = e => scope.replaceable.has(e.index) || scope.removable.has(e.index), stray = missing.filter(e => !named(e));
+  if (stray.length) {
+    const gone = stray.filter(e => !extras.some(x => sameImage(e, x)));
+    if (scope.unclear && !scope.replaceable.size && !scope.removable.size) return { code: 'IMAGE_SCOPE_UNCLEAR', message: 'The AI changed ' + plural(stray.length, 'existing image') + ' (' + describeImages(stray) + '), but your request did not say which image to change. Name it, for example "the hero image", "the first gallery photo" or "all images". Your website was not changed.' };
+    return { code: gone.length ? 'IMAGES_REMOVED' : 'IMAGES_MODIFIED', message: 'The AI ' + (gone.length ? 'removed or replaced' : 'changed') + ' ' + plural(stray.length, 'existing image') + ' you did not ask about: ' + describeImages(stray) + '. Only the images you name may change. ' + IMAGE_HOW };
+  }
+  const mustReplace = missing.filter(e => scope.replaceable.has(e.index) && !scope.removable.has(e.index)), illustrations = newIllustrations(before, after);
+  if (mustReplace.length > extras.length + illustrations) {
+    const n = mustReplace.length - extras.length - illustrations;
+    return { code: 'IMAGES_REMOVED', message: 'The AI removed ' + plural(n, 'existing image') + ' without replacing ' + (n === 1 ? 'it' : 'them') + ': ' + describeImages(mustReplace) + '. A replacement is an approved photo or a drawn illustration; images are only removed when you explicitly ask, for example "remove the gallery photos". Your website was not changed.' };
+  }
+  if (!scope.add && extras.length > mustReplace.length) return { code: 'IMAGES_ADDED', message: 'The AI added ' + plural(extras.length - mustReplace.length, 'image') + ' that you did not ask for (' + describeImages(extras) + '). New images are only added when you explicitly ask for them, for example "add a photo of the interior". Your website was not changed.' };
+  return null;
+}
+// null when the edit is fine, otherwise { code, message } for the API error. Image elements and URLs that were already in the page always stay valid, so existing projects keep working.
+// Without an explicit request: no new remote URL, every original image element unchanged, nothing image-like added. With one: see explicitImageProblem.
+function editImageProblem(before, after, instruction, context) {
+  const scope = imageScope(before, instruction);
+  if (scope.requested) return explicitImageProblem(before, after, scope, context);
+  const had = externalImageUrls(before), added = [...externalImageUrls(after)].filter(u => !had.has(u));
+  if (added.length) return { code: 'IMAGES_CHANGED', message: 'The AI changed or added images (' + quoted(added) + '). ' + IMAGE_HOW };
+  return imagePreservationProblem(before, after);
+}
 
 // Google Fonts is the ONE external resource a page may use: a <link rel="stylesheet"> whose absolute https URL has exactly the host fonts.googleapis.com and a /css or /css2 path.
 // The URL is parsed, not pattern-matched, so lookalike hosts, user-info tricks (https://fonts.googleapis.com@evil.example), ports, http and protocol-relative URLs all fail.
@@ -316,6 +603,13 @@ function generationProblems(html, brief) {
   if ([...APPROVED_PHOTOS].some(url => photoSafe.includes(url))) {
     add('external', true, 'Approved photo URLs may appear only in the src attribute of an img element.');
   }
+
+  // An approved photo must suit THIS business, and should not be repeated while suitable unused photos remain.
+  const used = imgSrcs(html).filter(u => APPROVED_PHOTOS.has(u)), pool = photosForBrief(brief).map(p => p.url);
+  const offTopic = [...new Set(used.filter(u => !pool.includes(u)))];
+  if (offTopic.length) add('wrongimage', true, 'These photos do not suit this business: ' + quoted(offTopic) + '. Remove them. ' + (pool.length ? 'Use only these: ' + quoted(pool, 8) + '.' : 'No approved photograph suits this kind of business, so use inline SVG or CSS illustration.'));
+  const repeated = [...new Set(used.filter((u, i) => used.indexOf(u) !== i))];
+  if (repeated.length && pool.some(u => !used.includes(u))) add('repeatedimage', false, 'The same photo is used more than once (' + quoted(repeated) + ') while other suitable photos are unused. Use each photo once and fill any extra image slots with illustration.');
 
   const bare = photoSafe.replace(LINK_TAG, t => (isGoogleFontsLink(t) ? '' : t));
 
@@ -485,4 +779,5 @@ async function generateSite({ brief, callModel, maxHtml, deadline, minRetryMs = 
   };
 }
 
-module.exports = { TYPES, STYLES, PAGES, normalizeBrief, buildGenerationPrompt, industryDirection, cleanOutput, validateOutput, generationProblems, designProblems, injectMotionRuntime, stripInjectedMotion, finalizeGenerated, generateSite };
+module.exports = { TYPES, STYLES, PAGES, normalizeBrief, buildGenerationPrompt, industryDirection, cleanOutput, validateOutput, generationProblems, designProblems, injectMotionRuntime, stripInjectedMotion, finalizeGenerated, generateSite,
+  PHOTO_CATALOG, photosForBrief, photosForHtml, photoLabelsToConfirm, imageReplacementRequested, imageRemovalRequested, editImagePolicy, editImageProblem, imageElements, imagePreservationProblem, IMAGE_PRESENTATION_ATTRS };
