@@ -9,7 +9,10 @@ class FakeLS {
   setItem(k, v) { if (this.fail) throw new Error('QuotaExceededError'); this.m[k] = String(v); }
   removeItem(k) { delete this.m[k]; }
 }
-const load = ls => new Function('localStorage', block('LOCALSTORE') + '; return {jget,jset,importedMap,recoveryRead,recoveryWrite,recoveryClear,sameContent,importItem,runImport};')(ls);
+const load = ls => {
+  const raw = new Function('localStorage', block('LOCALSTORE') + '; return {jget,jset,importedMap,setImported,recoveryRead,recoveryWrite,recoveryClear,sameContent,importItem,runImport};')(ls);
+  return { ...raw, raw, runImport: (items, post, uid = 'u1') => raw.runImport(items, post, uid), importedMap: (uid = 'u1') => raw.importedMap(uid) };
+};
 const proj = (i, o = {}) => ({ id: 'p' + i, name: 'Project ' + i, type: 'cafe', desc: 'd', audience: 'a', style: 'Modern', pages: ['Services'], html: '<html>' + i + '</html>', mode: 'demo', generatedAt: 1, created: 2, history: [], ...o });
 
 test('recovery copy: write, read, clear', () => {
@@ -96,4 +99,20 @@ test('importItem trims history to the last 5 and fills defaults', () => {
   const L = load(new FakeLS());
   const it = L.importItem(proj(1, { html: undefined, history: [1, 2, 3, 4, 5, 6, 7].map(i => ({ id: i })) }));
   assert.equal(it.html, ''); assert.deepEqual(it.history.map(h => h.id), [3, 4, 5, 6, 7]); assert.equal(it.localId, 'p1');
+});
+
+test('imported-project bookkeeping is per account: one user\'s imports never hide another user\'s local projects', async () => {
+  const L = load(new FakeLS());
+  await L.runImport([proj(1)], async () => ({ status: 'imported', id: 'srv-a' }), 'userA');
+  assert.deepEqual(L.importedMap('userA'), { p1: 'srv-a' });
+  assert.deepEqual(L.importedMap('userB'), {}, 'userB still sees p1 as not yet imported');
+  assert.deepEqual(L.importedMap(null), {}); assert.deepEqual(L.importedMap(undefined), {});
+  const r = await L.runImport([proj(1)], async () => ({ status: 'imported', id: 'srv-b' }), 'userB');
+  assert.deepEqual(r.ok, ['p1']); assert.equal(L.importedMap('userA').p1, 'srv-a', 'userA mapping untouched');
+});
+
+test('the old Stage 1 (anonymous) imported map is ignored rather than misread as a per-account map', () => {
+  const L = load(new FakeLS({ 'launchforge.imported.v1': JSON.stringify({ p1: 'old-server-id', p2: 'x' }) }));
+  assert.deepEqual(L.importedMap('any-user-id'), {});
+  assert.deepEqual(L.importedMap('p1'), {}, 'a string value is not an object map');
 });
