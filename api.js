@@ -1,6 +1,7 @@
 // Project API logic. Framework-free: handle({method, path, headers, body, ip}) -> {status, body}.
-// Stage 1 identity: an anonymous owner token (NOT authentication). Every query is scoped to its hash.
-const crypto = require('crypto');
+// Identity comes ONLY from the server-side session (see security.authenticate). Every store call is scoped to that user id;
+// ids or owners sent in a request body are ignored.
+const { authenticate } = require('./security');
 
 const DEFAULTS = {
   maxPerOwner: Number(process.env.MAX_PROJECTS_PER_OWNER) || 50,
@@ -57,6 +58,7 @@ function validate(b, maxChars) {
 function mapError(e) {
   if (e && e.code === 'DB_NOT_CONFIGURED') return E(503, 'DB_NOT_CONFIGURED', 'Server storage is not configured.');
   if (e && e.code === 'DB_UNAVAILABLE') return E(503, 'DB_UNAVAILABLE', 'Server storage is temporarily unavailable.');
+  if (e && e.code === 'SCHEMA_OUTDATED') return E(503, 'SCHEMA_OUTDATED', 'The database needs a migration before this can be used.');
   console.error('Projects API error:', (e && (e.pgCode || e.code || e.message)) || 'unknown');
   return E(500, 'SERVER', 'Unexpected server error.');
 }
@@ -82,10 +84,11 @@ function createApi(storeOrGetter, options = {}) {
     try {
       const method = String(req.method || '').toUpperCase();
       const parts = String(req.path || '/').split('/').filter(Boolean);
-      const m = /^Bearer ([A-Za-z0-9_-]{32,128})$/.exec((req.headers && req.headers.authorization) || '');
-      if (!m) return E(401, 'NO_OWNER', 'Missing or invalid anonymous owner token.');
-      const owner = crypto.createHash('sha256').update(m[1]).digest('hex');
-      if (method !== 'GET' && !allowWrite(req.ip || 'unknown')) return E(429, 'RATE_LIMIT', 'Too many save requests. Wait a moment and try again.');
+      // Runs before routing, so every path under /api/projects (including unknown ones) requires a logged-in user.
+      const auth = await authenticate(req, { originPolicy: L.originPolicy || (() => false) });
+      if (auth.err) return auth.err;
+      const owner = auth.userId;
+      if (method !== 'GET' && !allowWrite(owner)) return E(429, 'RATE_LIMIT', 'Too many save requests. Wait a moment and try again.');
       const store = typeof storeOrGetter === 'function' ? storeOrGetter() : storeOrGetter;
 
       if (parts.length === 0) {
@@ -149,4 +152,11 @@ function createApi(storeOrGetter, options = {}) {
   };
 }
 
-module.exports = { createApi, validate };
+// Used by /api/edit: when a project id is supplied, the caller must own it (404 otherwise, never revealing other users' ids).
+async function authorizeEdit(store, userId, projectId) {
+  if (projectId == null) return null;
+  if (typeof projectId !== 'string' || !UUID.test(projectId)) return E(400, 'BAD_ID', 'Project id is not valid.');
+  return (await store.get(userId, projectId)) ? null : E(404, 'NOT_FOUND', 'Project not found.');
+}
+
+module.exports = { createApi, validate, mapError, authorizeEdit };
